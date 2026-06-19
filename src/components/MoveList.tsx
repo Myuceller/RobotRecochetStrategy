@@ -1,19 +1,19 @@
 import { toPosition } from '../features/puzzle/board';
-import { sampleBoard } from '../features/puzzle/sampleBoard';
-import type { Move, SolveResult } from '../features/puzzle/types';
+import type { Board, Move, SolveResult } from '../features/puzzle/types';
 
 type MoveListProps = {
+  board: Board;
   result: SolveResult | null;
   stepIndex: number;
 };
 
-function formatCell(index: Move['from']): string {
-  const position = toPosition(index, sampleBoard);
+function formatCell(index: Move['from'], board: Board): string {
+  const position = toPosition(index, board);
 
   return `cell ${index} (${position.row}, ${position.col})`;
 }
 
-export function MoveList({ result, stepIndex }: MoveListProps) {
+export function MoveList({ board, result, stepIndex }: MoveListProps) {
   if (!result || result.moves.length === 0) {
     return null;
   }
@@ -36,7 +36,7 @@ export function MoveList({ result, stepIndex }: MoveListProps) {
               {index + 1}. {move.robot} → {move.direction}
             </div>
             <div className={`mt-1 text-xs ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>
-              {formatCell(move.from)} to {formatCell(move.to)}
+              {formatCell(move.from, board)} to {formatCell(move.to, board)}
             </div>
           </li>
         );

@@ -1,9 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { SolveResult } from '../features/puzzle/types';
+import type { Board, SolveResult } from '../features/puzzle/types';
 import { MoveList } from './MoveList';
 import { PlaybackControls, type PlaybackSpeed } from './PlaybackControls';
 
 type SolutionPanelProps = {
+  board: Board;
   result: SolveResult | null;
   stepIndex: number;
   setStepIndex: Dispatch<SetStateAction<number>>;
@@ -54,6 +55,7 @@ function getFailureText(reason: SolveResult['reason']): { title: string; detail:
 }
 
 export function SolutionPanel({
+  board,
   result,
   stepIndex,
   setStepIndex,
@@ -74,7 +76,7 @@ export function SolutionPanel({
     <aside className="rounded border border-slate-300 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Solution</h2>
+          <h2 className="text-lg font-semibold">Run BFS</h2>
           <p className="text-sm text-slate-600">
             Step {stepIndex} / {moveCount}
           </p>
@@ -86,7 +88,7 @@ export function SolutionPanel({
             disabled={isSolving || isSolveDisabled}
             className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isSolving ? 'Solving...' : 'Solve'}
+            {isSolving ? 'Running...' : 'Solve'}
           </button>
           <button
             type="button"
@@ -101,9 +103,11 @@ export function SolutionPanel({
 
       <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
         {isSolving ? (
-          <p className="text-slate-600">해법 계산 중...</p>
+          <p className="text-slate-600">
+            BFS가 상태를 하나씩 꺼내 보드에 표시하는 중입니다.
+          </p>
         ) : !result ? (
-          <p className="text-slate-600">아직 해법을 계산하지 않았습니다.</p>
+          <p className="text-slate-600">Solve를 누르면 탐색 과정이 보드와 BFS 패널에 표시됩니다.</p>
         ) : result.found ? (
           <div className="space-y-1">
             <p className="font-semibold">최단 경로 {result.moves.length} moves</p>
@@ -134,7 +138,7 @@ export function SolutionPanel({
         onSpeedChange={onSpeedChange}
       />
 
-      <MoveList result={result} stepIndex={stepIndex} />
+      <MoveList board={board} result={result} stepIndex={stepIndex} />
     </aside>
   );
 }

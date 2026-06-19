@@ -32,6 +32,7 @@ import type {
   Board,
   CellIndex,
   Direction,
+  Move,
   PuzzleState,
   RobotColor,
   RobotState,
@@ -66,6 +67,17 @@ const PLAYBACK_INTERVAL_MS: Record<PlaybackSpeed, number> = {
   ultra: 60,
 };
 
+type SearchFrame = {
+  robots: RobotState;
+  move?: Move;
+};
+
+type SearchPlaybackSpeed = 120 | 80 | 40 | 16;
+
+const MAX_SEARCH_FRAME_QUEUE = 50_000;
+const MAX_SEARCH_REPLAY_FRAMES = 50_000;
+const PROGRESS_STATS_INTERVAL_MS = 80;
+
 export default function Page() {
   const initialSample = samplePuzzles[0];
   const [activeBoard, setActiveBoard] = useState<Board>(initialSample.board);
@@ -87,6 +99,7 @@ export default function Page() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isGeneratingPuzzle, setIsGeneratingPuzzle] = useState(false);
   const [result, setResult] = useState<SolveResult | null>(null);
+  const [precheckedResult, setPrecheckedResult] = useState<SolveResult | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [isPlayingSolution, setIsPlayingSolution] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>('normal');
@@ -94,7 +107,13 @@ export default function Page() {
   const [selectedEditorRobot, setSelectedEditorRobot] = useState<RobotColor>('red');
   const [selectedWallDirection, setSelectedWallDirection] = useState<Direction>('right');
   const [isSolving, setIsSolving] = useState(false);
+  const [isShowingSearchFrames, setIsShowingSearchFrames] = useState(false);
+  const [searchPlaybackSpeed, setSearchPlaybackSpeed] = useState<SearchPlaybackSpeed>(80);
+  const [receivedSearchFrameCount, setReceivedSearchFrameCount] = useState(0);
+  const [displayedSearchFrameCount, setDisplayedSearchFrameCount] = useState(0);
+  const [droppedSearchFrameCount, setDroppedSearchFrameCount] = useState(0);
   const [progress, setProgress] = useState<SearchProgress | null>(null);
+  const [searchFrame, setSearchFrame] = useState<SearchFrame | null>(null);
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [exportedJson, setExportedJson] = useState('');
   const [importText, setImportText] = useState('');
@@ -102,6 +121,12 @@ export default function Page() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
+  const solveInFlightRef = useRef(false);
+  const searchFrameQueueRef = useRef<SearchFrame[]>([]);
+  const searchFrameReplayRef = useRef<SearchFrame[]>([]);
+  const searchFrameAnimationRef = useRef<number | null>(null);
+  const lastSearchFrameAtRef = useRef(0);
+  const lastProgressStatsAtRef = useRef(0);
   const generationWorkerRef = useRef<Worker | null>(null);
   const activeGenerationRequestIdRef = useRef<string | null>(null);
 
@@ -115,6 +140,57 @@ export default function Page() {
     () => (currentMove ? getMovePath(activeBoard, currentMove) : null),
     [activeBoard, currentMove]
   );
+  const searchMovePath = useMemo(
+    () =>
+      isShowingSearchFrames && searchFrame?.move
+        ? getMovePath(activeBoard, searchFrame.move)
+        : null,
+    [activeBoard, isShowingSearchFrames, searchFrame?.move]
+  );
+  const displayRobots =
+    isShowingSearchFrames && searchFrame?.robots ? searchFrame.robots : currentRobots;
+  const displayMovePath = searchMovePath ?? currentMovePath;
+  const displayMoveRobot =
+    isShowingSearchFrames && searchFrame?.move
+      ? searchFrame.move.robot
+      : currentMove?.robot ?? null;
+
+  useEffect(() => {
+    if (!isShowingSearchFrames) {
+      if (searchFrameAnimationRef.current !== null) {
+        cancelAnimationFrame(searchFrameAnimationRef.current);
+        searchFrameAnimationRef.current = null;
+      }
+      return;
+    }
+
+    const tick = (timestamp: number) => {
+      if (timestamp - lastSearchFrameAtRef.current >= searchPlaybackSpeed) {
+        const nextFrame = searchFrameQueueRef.current.shift();
+
+        if (nextFrame) {
+          setSearchFrame(nextFrame);
+          setDisplayedSearchFrameCount((current) => current + 1);
+          lastSearchFrameAtRef.current = timestamp;
+        }
+      } else if (!isSolving) {
+        setIsShowingSearchFrames(false);
+        searchFrameAnimationRef.current = null;
+        return;
+      }
+
+      searchFrameAnimationRef.current = requestAnimationFrame(tick);
+    };
+
+    searchFrameAnimationRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (searchFrameAnimationRef.current !== null) {
+        cancelAnimationFrame(searchFrameAnimationRef.current);
+        searchFrameAnimationRef.current = null;
+      }
+    };
+  }, [isShowingSearchFrames, isSolving, searchPlaybackSpeed]);
 
   useEffect(() => {
     if (!isPlayingSolution || !result?.found) {
@@ -188,6 +264,8 @@ export default function Page() {
     if (activeRequestIdRef.current === requestId) {
       activeRequestIdRef.current = null;
     }
+
+    solveInFlightRef.current = false;
   };
 
   const finishGenerationWorker = (worker: Worker, requestId: string) => {
@@ -214,7 +292,10 @@ export default function Page() {
     workerRef.current?.terminate();
     workerRef.current = null;
     activeRequestIdRef.current = null;
+    solveInFlightRef.current = false;
     setIsSolving(false);
+    setIsShowingSearchFrames(false);
+    searchFrameQueueRef.current = [];
   };
 
   const stopActiveGenerationWorker = () => {
@@ -236,9 +317,105 @@ export default function Page() {
   const resetTransientState = () => {
     setIsPlayingSolution(false);
     setResult(null);
+    setPrecheckedResult(null);
     setProgress(null);
+    setSearchFrame(null);
+    setIsShowingSearchFrames(false);
+    setReceivedSearchFrameCount(0);
+    setDisplayedSearchFrameCount(0);
+    setDroppedSearchFrameCount(0);
+    searchFrameQueueRef.current = [];
+    searchFrameReplayRef.current = [];
+    lastSearchFrameAtRef.current = 0;
+    lastProgressStatsAtRef.current = 0;
     setWorkerError(null);
     setStepIndex(0);
+  };
+
+  const createSearchVisualFrames = (nextProgress: SearchProgress): SearchFrame[] => {
+    const currentRobots = nextProgress.currentRobots;
+    const currentMove = nextProgress.currentMove;
+
+    if (!currentRobots) {
+      return [];
+    }
+
+    if (!currentMove) {
+      return [
+        {
+          robots: currentRobots,
+        },
+      ];
+    }
+
+    try {
+      const path = getMovePath(activeBoard, currentMove);
+
+      return path.cells.map((cell) => ({
+        robots: {
+          ...currentRobots,
+          [currentMove.robot]: cell,
+        },
+        move: currentMove,
+      }));
+    } catch {
+      return [
+        {
+          robots: currentRobots,
+          move: currentMove,
+        },
+      ];
+    }
+  };
+
+  const enqueueSearchFrame = (nextProgress: SearchProgress) => {
+    if (!nextProgress.currentRobots) {
+      return;
+    }
+
+    const visualFrames = createSearchVisualFrames(nextProgress);
+
+    if (visualFrames.length === 0) {
+      return;
+    }
+
+    searchFrameQueueRef.current.push(...visualFrames);
+    searchFrameReplayRef.current.push(...visualFrames);
+    setReceivedSearchFrameCount((current) => current + 1);
+
+    if (searchFrameReplayRef.current.length > MAX_SEARCH_REPLAY_FRAMES) {
+      searchFrameReplayRef.current.splice(
+        0,
+        searchFrameReplayRef.current.length - MAX_SEARCH_REPLAY_FRAMES
+      );
+    }
+
+    if (searchFrameQueueRef.current.length > MAX_SEARCH_FRAME_QUEUE) {
+      const dropCount = searchFrameQueueRef.current.length - MAX_SEARCH_FRAME_QUEUE;
+      setDroppedSearchFrameCount((current) => current + dropCount);
+      searchFrameQueueRef.current.splice(
+        0,
+        dropCount
+      );
+    }
+  };
+
+  const handleReplaySearchFrames = () => {
+    if (searchFrameReplayRef.current.length === 0) {
+      return;
+    }
+
+    setIsPlayingSolution(false);
+    searchFrameQueueRef.current = searchFrameReplayRef.current.map((frame) => ({
+      robots: frame.robots,
+      move: frame.move,
+    }));
+    const firstFrame = searchFrameQueueRef.current.shift() ?? null;
+    setSearchFrame(firstFrame);
+    setDisplayedSearchFrameCount(firstFrame ? 1 : 0);
+    setDroppedSearchFrameCount(0);
+    setIsShowingSearchFrames(true);
+    lastSearchFrameAtRef.current = 0;
   };
 
   const activateSamplePuzzle = (sampleId: SamplePuzzleId) => {
@@ -255,6 +432,7 @@ export default function Page() {
     setActiveBoard(sample.board);
     setActivePuzzle(sample.puzzle);
     setPuzzleSource('sample');
+    setPrecheckedResult(null);
     setGenerationInfo(null);
     setGenerationError(null);
     setImportError(null);
@@ -271,6 +449,7 @@ export default function Page() {
     stopActiveGenerationWorker();
     setActivePuzzle(nextPuzzle);
     setPuzzleSource('custom');
+    setPrecheckedResult(null);
     setGenerationInfo(null);
     setGenerationError(null);
     setImportError(null);
@@ -287,6 +466,7 @@ export default function Page() {
     stopActiveGenerationWorker();
     setActiveBoard(nextBoard);
     setPuzzleSource('custom');
+    setPrecheckedResult(null);
     setGenerationInfo(null);
     setGenerationError(null);
     setImportError(null);
@@ -325,6 +505,7 @@ export default function Page() {
       setActiveBoard(imported.board);
       setActivePuzzle(imported.puzzle);
       setPuzzleSource('custom');
+      setPrecheckedResult(null);
       setGenerationInfo(null);
       setGenerationError(null);
       setImportError(null);
@@ -368,6 +549,11 @@ export default function Page() {
       : true;
 
   const handleSolve = () => {
+    if (solveInFlightRef.current || isSolving || isGeneratingPuzzle) {
+      return;
+    }
+
+    solveInFlightRef.current = true;
     setIsPlayingSolution(false);
     const previousRequestId = activeRequestIdRef.current;
 
@@ -384,14 +570,32 @@ export default function Page() {
       typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random()}`;
-    const worker = new Worker(new URL('../features/puzzle/solverWorker.ts', import.meta.url), {
-      type: 'module',
-    });
+    let worker: Worker;
+
+    try {
+      worker = new Worker(new URL('../features/puzzle/solverWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+    } catch (error) {
+      solveInFlightRef.current = false;
+      setIsSolving(false);
+      setWorkerError(error instanceof Error ? error.message : 'Solver worker failed to start.');
+      return;
+    }
 
     workerRef.current = worker;
     activeRequestIdRef.current = requestId;
     setResult(null);
     setProgress(null);
+    setSearchFrame(null);
+    setIsShowingSearchFrames(true);
+    setReceivedSearchFrameCount(0);
+    setDisplayedSearchFrameCount(0);
+    setDroppedSearchFrameCount(0);
+    searchFrameQueueRef.current = [];
+    searchFrameReplayRef.current = [];
+    lastSearchFrameAtRef.current = 0;
+    lastProgressStatsAtRef.current = 0;
     setWorkerError(null);
     setIsSolving(true);
     setStepIndex(0);
@@ -404,24 +608,48 @@ export default function Page() {
       }
 
       if (message.type === 'progress') {
-        setProgress(message.progress);
+        enqueueSearchFrame(message.progress);
+
+        const now = performance.now();
+        const shouldUpdateStats =
+          message.progress.status !== 'running' ||
+          now - lastProgressStatsAtRef.current >= PROGRESS_STATS_INTERVAL_MS;
+
+        if (shouldUpdateStats) {
+          setProgress(message.progress);
+          lastProgressStatsAtRef.current = now;
+        }
+
+        if (message.progress.status !== 'running' && message.progress.currentRobots) {
+          setSearchFrame({
+            robots: message.progress.currentRobots,
+            move: message.progress.currentMove,
+          });
+        }
         return;
       }
 
       if (message.type === 'result') {
-        setResult(message.result);
+        const displayResult =
+          message.result.found || message.result.reason === 'cancelled'
+            ? message.result
+            : precheckedResult ?? message.result;
+
+        setResult(displayResult);
         setProgress((currentProgress) =>
           currentProgress
             ? {
                 ...currentProgress,
-                status:
-                  message.result.reason ??
-                  (message.result.found ? 'solved' : 'notFound'),
+                status: displayResult.found
+                  ? 'solved'
+                  : message.result.reason ?? 'notFound',
                 visitedCount: message.result.visitedCount,
-                depth: message.result.depth,
+                depth: displayResult.depth,
                 frontierSize: 0,
-                message: message.result.found
-                  ? `Solved at depth ${message.result.depth}.`
+                message: displayResult.found
+                  ? message.result.found
+                    ? `Solved at depth ${displayResult.depth}.`
+                    : `Search ended: ${message.result.reason ?? 'notFound'}. Showing prechecked solution at depth ${displayResult.depth}.`
                   : `Search ended: ${message.result.reason ?? 'notFound'}.`,
               }
             : currentProgress
@@ -432,7 +660,12 @@ export default function Page() {
         return;
       }
 
-      setWorkerError(message.message);
+      if (precheckedResult?.found) {
+        setResult(precheckedResult);
+        setWorkerError(`${message.message}. Showing prechecked solution.`);
+      } else {
+        setWorkerError(message.message);
+      }
       setIsSolving(false);
       setStepIndex(0);
       finishActiveWorker(worker, requestId);
@@ -443,7 +676,12 @@ export default function Page() {
         return;
       }
 
-      setWorkerError(event.message || 'Solver worker failed.');
+      if (precheckedResult?.found) {
+        setResult(precheckedResult);
+        setWorkerError(`${event.message || 'Solver worker failed.'} Showing prechecked solution.`);
+      } else {
+        setWorkerError(event.message || 'Solver worker failed.');
+      }
       setIsSolving(false);
       setStepIndex(0);
       finishActiveWorker(worker, requestId);
@@ -455,11 +693,11 @@ export default function Page() {
       board: activeBoard,
       puzzle: activePuzzle,
       options: {
-        maxVisited: 250_000,
+        maxVisited: 1_000_000,
         maxDepth: 50,
-        maxQueueSize: 250_000,
-        chunkSize: 50,
-        progressInterval: 50,
+        maxQueueSize: 1_000_000,
+        chunkSize: 1,
+        progressInterval: 1,
       },
     } satisfies SolverWorkerRequest);
   };
@@ -514,6 +752,7 @@ export default function Page() {
         setActiveBoard(message.result.board);
         setActivePuzzle(message.result.puzzle);
         setPuzzleSource('random');
+        setPrecheckedResult(message.result.solution);
         setStepIndex(0);
         setGenerationInfo({
           attempts: message.result.attempts,
@@ -596,21 +835,83 @@ export default function Page() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-4 text-slate-950">
-      <div className="mx-auto grid max-w-7xl gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section>
-          <div className="mb-3">
+    <main className="min-h-screen bg-slate-100 px-3 py-3 text-slate-950 sm:px-4">
+      <div className="mx-auto max-w-[1680px]">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
             <h1 className="text-2xl font-semibold tracking-normal">Sliding Robot Lab</h1>
             <p className="mt-1 text-sm text-slate-600">
-              BFS shortest-path analysis and search visualization
+              BFS search visualization first. Tools stay collapsed below.
             </p>
           </div>
+          <div className="rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+            Current puzzle: <span className="font-semibold text-slate-900">{puzzleSource}</span>
+            {generationInfo?.solutionDepth ? (
+              <span className="ml-2">verified depth {generationInfo.solutionDepth}</span>
+            ) : null}
+          </div>
+        </div>
 
-          <details className="mb-3 rounded border border-slate-300 bg-white text-sm shadow-sm">
+        <section className="grid items-start gap-3 xl:grid-cols-[minmax(520px,780px)_minmax(300px,390px)_340px]">
+          <div className="rounded border border-slate-300 bg-white p-2 shadow-sm">
+            <BoardView
+              board={activeBoard}
+              robots={displayRobots}
+              targetRobot={activePuzzle.targetRobot}
+              targetCell={activePuzzle.targetCell}
+              heatmap={progress?.heatmap}
+              sampledCells={progress?.sampledCells}
+              maxHeat={progress?.maxHeat}
+              currentMovePath={displayMovePath}
+              activeMoveRobot={displayMoveRobot}
+              editable={editorMode !== 'off' && !isSolving && !isGeneratingPuzzle}
+              isCellEditable={canEditCell}
+              onCellClick={handleEditorCellClick}
+            />
+          </div>
+          <SearchProgressPanel
+            progress={progress}
+            isSolving={isSolving || isShowingSearchFrames}
+            currentMove={searchFrame?.move}
+            frameQueueSize={searchFrameQueueRef.current.length}
+            receivedFrameCount={receivedSearchFrameCount}
+            displayedFrameCount={displayedSearchFrameCount}
+            droppedFrameCount={droppedSearchFrameCount}
+            playbackSpeed={searchPlaybackSpeed}
+            onPlaybackSpeedChange={setSearchPlaybackSpeed}
+            canReplay={searchFrameReplayRef.current.length > 0}
+            replayFrameCount={searchFrameReplayRef.current.length}
+            onReplay={handleReplaySearchFrames}
+          />
+          <SolutionPanel
+            board={activeBoard}
+            result={result}
+            stepIndex={stepIndex}
+            setStepIndex={handleManualStepIndexChange}
+            onSolve={handleSolve}
+            onCancel={handleCancel}
+            isSolving={isSolving}
+            isSolveDisabled={isGeneratingPuzzle}
+            isPlaying={isPlayingSolution}
+            playbackSpeed={playbackSpeed}
+            onPlay={() => setIsPlayingSolution(true)}
+            onPause={() => setIsPlayingSolution(false)}
+            onSpeedChange={setPlaybackSpeed}
+          />
+        </section>
+
+        {workerError ? (
+          <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {workerError}
+          </div>
+        ) : null}
+
+        <section className="mt-3 grid gap-3 lg:grid-cols-2">
+          <details className="rounded border border-slate-300 bg-white text-sm shadow-sm">
             <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-slate-800">
               Puzzle Setup
               <span className="ml-2 text-xs font-normal text-slate-500">
-                {puzzleSource}
+                sample/random/difficulty
               </span>
             </summary>
             <div className="border-t border-slate-200">
@@ -632,31 +933,6 @@ export default function Page() {
               />
             </div>
           </details>
-
-          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,auto)_330px]">
-            <BoardView
-              board={activeBoard}
-              robots={currentRobots}
-              targetRobot={activePuzzle.targetRobot}
-              targetCell={activePuzzle.targetCell}
-              heatmap={progress?.heatmap}
-              sampledCells={progress?.sampledCells}
-              maxHeat={progress?.maxHeat}
-              currentMovePath={currentMovePath}
-              activeMoveRobot={currentMove?.robot ?? null}
-              editable={editorMode !== 'off' && !isSolving && !isGeneratingPuzzle}
-              isCellEditable={canEditCell}
-              onCellClick={handleEditorCellClick}
-            />
-            <SearchProgressPanel progress={progress} isSolving={isSolving} />
-          </div>
-
-          {workerError ? (
-            <div className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {workerError}
-            </div>
-          ) : null}
-
           <PuzzleEditorPanel
             editorMode={editorMode}
             selectedEditorRobot={selectedEditorRobot}
@@ -680,21 +956,6 @@ export default function Page() {
             onImport={handleImportPuzzle}
           />
         </section>
-
-        <SolutionPanel
-          result={result}
-          stepIndex={stepIndex}
-          setStepIndex={handleManualStepIndexChange}
-          onSolve={handleSolve}
-          onCancel={handleCancel}
-          isSolving={isSolving}
-          isSolveDisabled={isGeneratingPuzzle}
-          isPlaying={isPlayingSolution}
-          playbackSpeed={playbackSpeed}
-          onPlay={() => setIsPlayingSolution(true)}
-          onPause={() => setIsPlayingSolution(false)}
-          onSpeedChange={setPlaybackSpeed}
-        />
       </div>
     </main>
   );

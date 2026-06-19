@@ -1,8 +1,20 @@
 import type { SearchProgress } from '../features/puzzle/types';
 
+type SearchPlaybackSpeed = 120 | 80 | 40 | 16;
+
 type SearchProgressPanelProps = {
   progress: SearchProgress | null;
   isSolving?: boolean;
+  currentMove?: SearchProgress['currentMove'];
+  frameQueueSize?: number;
+  receivedFrameCount?: number;
+  displayedFrameCount?: number;
+  droppedFrameCount?: number;
+  playbackSpeed?: SearchPlaybackSpeed;
+  onPlaybackSpeedChange?: (speed: SearchPlaybackSpeed) => void;
+  canReplay?: boolean;
+  replayFrameCount?: number;
+  onReplay?: () => void;
 };
 
 function formatElapsed(ms: number): string {
@@ -76,18 +88,46 @@ function getTerminalNotice(status: SearchProgress['status']): string | null {
   }
 }
 
-export function SearchProgressPanel({ progress, isSolving = false }: SearchProgressPanelProps) {
+function formatMoveCell(cell: number): string {
+  return `#${cell}`;
+}
+
+function formatMove(move: NonNullable<SearchProgress['currentMove']>): string {
+  return `${move.robot} ${move.direction} ${formatMoveCell(move.from)} -> ${formatMoveCell(move.to)}`;
+}
+
+export function SearchProgressPanel({
+  progress,
+  isSolving = false,
+  currentMove,
+  frameQueueSize = 0,
+  receivedFrameCount = 0,
+  displayedFrameCount = 0,
+  droppedFrameCount = 0,
+  playbackSpeed = 80,
+  onPlaybackSpeedChange,
+  canReplay = false,
+  replayFrameCount = 0,
+  onReplay,
+}: SearchProgressPanelProps) {
+  const playbackSpeeds: Array<{ value: SearchPlaybackSpeed; label: string }> = [
+    { value: 120, label: 'slow' },
+    { value: 80, label: 'normal' },
+    { value: 40, label: 'fast' },
+    { value: 16, label: 'turbo' },
+  ];
+
   if (!progress) {
     return (
       <section className="rounded border border-slate-300 bg-white p-4 text-sm shadow-sm">
         <h2 className="text-base font-semibold">BFS Search Explorer</h2>
         <p className="mt-2 text-slate-600">
-          Solve를 누르면 컴퓨터가 같은 move 수의 상태를 한 층씩 넓혀 가며 탐색하는 과정이
-          여기에 표시됩니다.
+          Solve를 누르면 BFS가 상태를 하나씩 꺼내고, 그 상태의 로봇 위치가 보드에 바로
+          표시됩니다.
         </p>
         <div className="mt-3 rounded bg-slate-50 p-3 text-xs text-slate-600">
-          보드의 heatmap은 목표 로봇이 탐색 중 방문한 위치를 보여주고, 진한 칸은 최근
-          처리된 상태를 뜻합니다.
+          목표 로봇이 많이 지나간 칸은 heatmap으로 남고, 방금 꺼낸 move는 보드 위 경로로
+          강조됩니다.
         </div>
       </section>
     );
@@ -102,6 +142,7 @@ export function SearchProgressPanel({ progress, isSolving = false }: SearchProgr
   const isStaleRunningProgress = progress.status === 'running' && !isSolving;
   const displayStatus = isStaleRunningProgress ? 'stopped' : progress.status;
   const terminalNotice = getTerminalNotice(progress.status);
+  const displayMove = currentMove ?? progress.currentMove;
 
   return (
     <section className="rounded border border-slate-300 bg-white p-4 text-sm shadow-sm">
@@ -119,8 +160,7 @@ export function SearchProgressPanel({ progress, isSolving = false }: SearchProgr
 
       {isStaleRunningProgress ? (
         <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          현재 worker는 실행 중이 아닙니다. 아래 값은 마지막으로 받은 BFS 진행 상태입니다.
-          다시 보려면 Solve를 눌러 새 탐색을 시작하세요.
+          탐색 worker가 멈춘 상태입니다. 아래 값은 마지막으로 받은 BFS 상태입니다.
         </div>
       ) : null}
 
@@ -136,7 +176,21 @@ export function SearchProgressPanel({ progress, isSolving = false }: SearchProgr
         </div>
       ) : null}
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      {displayMove ? (
+        <div className="mt-3 rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+          <div className="font-semibold">Now expanding</div>
+          <div className="mt-1 font-mono">{formatMove(displayMove)}</div>
+          <div className="mt-1 text-sky-700">
+            이 move를 적용한 상태가 지금 보드에 표시됩니다.
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          시작 상태를 준비 중입니다.
+        </div>
+      )}
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
         <div className="rounded bg-slate-50 p-2">
           <div className="text-xs text-slate-500">Visited</div>
           <div className="font-semibold">{progress.visitedCount.toLocaleString()} states</div>
@@ -149,22 +203,64 @@ export function SearchProgressPanel({ progress, isSolving = false }: SearchProgr
           <div className="text-xs text-slate-500">Frontier</div>
           <div className="font-semibold">{progress.frontierSize.toLocaleString()} states</div>
         </div>
-        <div className="rounded bg-slate-50 p-2">
-          <div className="text-xs text-slate-500">Elapsed</div>
-          <div className="font-semibold">{formatElapsed(progress.elapsedMs)}</div>
-        </div>
-        <div className="rounded bg-slate-50 p-2">
-          <div className="text-xs text-slate-500">Speed</div>
-          <div className="font-semibold">
-            {(progress.statesPerSecond ?? 0).toLocaleString()} states/s
+      </div>
+
+      <div className="mt-3 rounded border border-slate-200 bg-white p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+              Frame Stream
+            </div>
+            <div className="mt-1 text-xs text-slate-600">
+              BFS 후보 상태를 받고, 각 move를 미끄러지는 칸 단위 프레임으로 펼쳐 재생합니다.
+            </div>
+          </div>
+          <div className="text-right text-xs text-slate-500">
+            queue <span className="font-semibold text-slate-900">{frameQueueSize.toLocaleString()}</span>
           </div>
         </div>
-        <div className="rounded bg-slate-50 p-2">
-          <div className="text-xs text-slate-500">Peak Layer</div>
-          <div className="font-semibold">
-            {mostVisitedDepth
-              ? `Depth ${mostVisitedDepth.depth} (${mostVisitedDepth.count.toLocaleString()})`
-              : '-'}
+        <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+          <div className="rounded bg-slate-50 p-2">
+            <div className="text-slate-500">BFS States</div>
+            <div className="font-semibold">{receivedFrameCount.toLocaleString()}</div>
+          </div>
+          <div className="rounded bg-slate-50 p-2">
+            <div className="text-slate-500">Shown Frames</div>
+            <div className="font-semibold">{displayedFrameCount.toLocaleString()}</div>
+          </div>
+          <div className="rounded bg-slate-50 p-2">
+            <div className="text-slate-500">Dropped Frames</div>
+            <div className="font-semibold">{droppedFrameCount.toLocaleString()}</div>
+          </div>
+          <div className="rounded bg-slate-50 p-2">
+            <div className="text-slate-500">Saved Frames</div>
+            <div className="font-semibold">{replayFrameCount.toLocaleString()}</div>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onReplay}
+            disabled={!canReplay}
+            className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            Replay BFS
+          </button>
+          <div className="grid flex-1 grid-cols-4 gap-2">
+            {playbackSpeeds.map((speed) => (
+              <button
+                key={speed.value}
+                type="button"
+                onClick={() => onPlaybackSpeedChange?.(speed.value)}
+                className={`rounded border px-2 py-1 text-xs font-semibold ${
+                  playbackSpeed === speed.value
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {speed.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -172,43 +268,93 @@ export function SearchProgressPanel({ progress, isSolving = false }: SearchProgr
       <p className="mt-3 text-slate-600">
         {progress.message ?? `Depth ${progress.depth} 탐색 중`}
       </p>
-      <div className="mt-3 grid gap-2 text-xs text-slate-600">
-        <div className="rounded bg-amber-50 p-2">
-          Heatmap: 목표 로봇이 많이 등장한 칸일수록 더 진하게 표시됩니다.
-        </div>
-        <div className="rounded bg-orange-50 p-2">
-          Recent cells: 방금 처리한 탐색 상태의 목표 로봇 위치가 더 강하게 표시됩니다.
-        </div>
-      </div>
 
-      {visibleDepthCounts.length > 0 ? (
-        <div className="mt-4">
+      {progress.recentMoves && progress.recentMoves.length > 0 ? (
+        <div className="mt-3 rounded border border-slate-200 bg-white p-3">
           <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
-            Depth Layers
+            Recent BFS Moves
           </div>
-          <div className="space-y-2">
-            {visibleDepthCounts.map(({ depth, count }) => {
-              const widthPercent =
-                maxVisibleDepthCount > 0 ? Math.max(4, (count / maxVisibleDepthCount) * 100) : 0;
-
-              return (
-                <div key={depth} className="grid grid-cols-[64px_minmax(0,1fr)_72px] items-center gap-2">
-                  <div className="text-xs text-slate-600">Depth {depth}</div>
-                  <div className="h-2 overflow-hidden rounded bg-slate-100">
-                    <div
-                      className="h-full rounded bg-slate-700"
-                      style={{ width: `${widthPercent}%` }}
-                    />
-                  </div>
-                  <div className="text-right text-xs tabular-nums text-slate-600">
-                    {count.toLocaleString()}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="max-h-36 space-y-1 overflow-hidden text-xs text-slate-700">
+            {progress.recentMoves.slice(-8).map((move, index) => (
+              <div
+                key={`${move.robot}-${move.direction}-${move.from}-${move.to}-${index}`}
+                className="grid grid-cols-[22px_minmax(0,1fr)] gap-2 rounded bg-slate-50 px-2 py-1"
+              >
+                <span className="text-right text-slate-400">
+                  {Math.max(1, (progress.recentMoves?.length ?? 0) - 7 + index)}
+                </span>
+                <span className="font-mono">{formatMove(move)}</span>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}
+
+      <details className="mt-3 rounded border border-slate-200 bg-white">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
+          Search stats
+        </summary>
+        <div className="border-t border-slate-200 p-3">
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded bg-slate-50 p-2">
+              <div className="text-slate-500">Elapsed</div>
+              <div className="font-semibold">{formatElapsed(progress.elapsedMs)}</div>
+            </div>
+            <div className="rounded bg-slate-50 p-2">
+              <div className="text-slate-500">Speed</div>
+              <div className="font-semibold">
+                {(progress.statesPerSecond ?? 0).toLocaleString()} states/s
+              </div>
+            </div>
+            <div className="rounded bg-slate-50 p-2">
+              <div className="text-slate-500">Peak Layer</div>
+              <div className="font-semibold">
+                {mostVisitedDepth
+                  ? `Depth ${mostVisitedDepth.depth} (${mostVisitedDepth.count.toLocaleString()})`
+                  : '-'}
+              </div>
+            </div>
+            <div className="rounded bg-slate-50 p-2">
+              <div className="text-slate-500">Heat Max</div>
+              <div className="font-semibold">{progress.maxHeat ?? 0}</div>
+            </div>
+          </div>
+
+          {visibleDepthCounts.length > 0 ? (
+            <div className="mt-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
+                Depth Layers
+              </div>
+              <div className="space-y-2">
+                {visibleDepthCounts.map(({ depth, count }) => {
+                  const widthPercent =
+                    maxVisibleDepthCount > 0
+                      ? Math.max(4, (count / maxVisibleDepthCount) * 100)
+                      : 0;
+
+                  return (
+                    <div
+                      key={depth}
+                      className="grid grid-cols-[64px_minmax(0,1fr)_72px] items-center gap-2"
+                    >
+                      <div className="text-xs text-slate-600">Depth {depth}</div>
+                      <div className="h-2 overflow-hidden rounded bg-slate-100">
+                        <div
+                          className="h-full rounded bg-slate-700"
+                          style={{ width: `${widthPercent}%` }}
+                        />
+                      </div>
+                      <div className="text-right text-xs tabular-nums text-slate-600">
+                        {count.toLocaleString()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </details>
     </section>
   );
 }

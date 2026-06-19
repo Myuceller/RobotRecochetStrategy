@@ -52,12 +52,15 @@ export function PuzzleControls({
     puzzleSource === 'sample' ? 'Sample' : puzzleSource === 'random' ? 'Random' : 'Custom';
 
   return (
-    <section className="mb-4 rounded border border-slate-300 bg-white p-4 text-sm shadow-sm">
+    <section className="p-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">Puzzle</h2>
           <p className="mt-1 text-slate-600">
-            Current: {sourceLabel}
+            Current: <span className="font-semibold text-slate-900">{sourceLabel}</span>
+            {generationInfo?.solutionDepth ? (
+              <span className="ml-2 text-xs">verified {generationInfo.solutionDepth} moves</span>
+            ) : null}
           </p>
           {puzzleSource === 'custom' ? (
             <p className="mt-1 text-xs text-slate-500">Edited puzzle on current board</p>
@@ -95,105 +98,85 @@ export function PuzzleControls({
         </div>
       </div>
 
-      <div className="mt-4">
-        <label
-          htmlFor="sample-puzzle"
-          className="mb-2 block text-xs font-semibold uppercase tracking-normal text-slate-500"
-        >
-          Sample Puzzle
-        </label>
-        <select
-          id="sample-puzzle"
-          value={selectedSamplePuzzleId}
-          onChange={(event) => onSelectSamplePuzzle(event.target.value)}
-          disabled={isPuzzleSwitchDisabled}
-          className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          {samplePuzzles.map((sample) => (
-            <option key={sample.id} value={sample.id}>
-              {sample.title}
-            </option>
-          ))}
-        </select>
-        {selectedSample ? (
-          <p className="mt-2 text-xs text-slate-500">{selectedSample.description}</p>
-        ) : null}
-      </div>
+      <details className="mt-4 rounded border border-slate-200 bg-white">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
+          Sample and difficulty
+        </summary>
+        <div className="border-t border-slate-200 p-3">
+          <label
+            htmlFor="sample-puzzle"
+            className="mb-2 block text-xs font-semibold uppercase tracking-normal text-slate-500"
+          >
+            Sample Puzzle
+          </label>
+          <select
+            id="sample-puzzle"
+            value={selectedSamplePuzzleId}
+            onChange={(event) => onSelectSamplePuzzle(event.target.value)}
+            disabled={isPuzzleSwitchDisabled}
+            className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            {samplePuzzles.map((sample) => (
+              <option key={sample.id} value={sample.id}>
+                {sample.title}
+              </option>
+            ))}
+          </select>
+          {selectedSample ? (
+            <p className="mt-2 text-xs text-slate-500">{selectedSample.description}</p>
+          ) : null}
 
-      <div className="mt-4">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
-          Difficulty
-        </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {difficultyPresets.map((preset) => {
-            const isSelected = preset.id === selectedDifficulty;
+          <div className="mt-4">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
+              Difficulty
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {difficultyPresets.map((preset) => {
+                const isSelected = preset.id === selectedDifficulty;
 
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => onSelectDifficulty(preset.id)}
-                disabled={isGeneratingPuzzle}
-                className={`rounded border p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${
-                  isSelected
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
-                }`}
-              >
-                <div className="font-semibold">{preset.label}</div>
-                <div className={isSelected ? 'text-slate-200' : 'text-slate-500'}>
-                  {preset.minDepth}-{preset.maxDepth} moves
-                </div>
-                <div className={`mt-1 text-xs ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                  {preset.description}
-                </div>
-              </button>
-            );
-          })}
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => onSelectDifficulty(preset.id)}
+                    disabled={isGeneratingPuzzle}
+                    className={`rounded border p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isSelected
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-semibold">{preset.label}</div>
+                    <div className={isSelected ? 'text-slate-200' : 'text-slate-500'}>
+                      {preset.minDepth}-{preset.maxDepth} moves
+                    </div>
+                    <div
+                      className={`mt-1 text-xs ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}
+                    >
+                      {preset.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedDifficulty === 'hard' ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Hard는 생성에 시간이 더 걸리거나 실패할 수 있습니다.
+              </p>
+            ) : null}
+          </div>
         </div>
-        {selectedDifficulty === 'hard' ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Hard는 생성에 시간이 더 걸리거나 실패할 수 있습니다.
-          </p>
-        ) : null}
-      </div>
+      </details>
 
       {isGeneratingPuzzle ? (
         <p className="mt-3 text-slate-600">랜덤 퍼즐 생성 중...</p>
       ) : null}
 
       {puzzleSource === 'random' && generationInfo ? (
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Difficulty</div>
-            <div className="font-semibold">{generationInfo.difficultyLabel ?? selectedPreset?.label ?? '-'}</div>
-          </div>
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Attempts</div>
-            <div className="font-semibold">{generationInfo.attempts ?? '-'}</div>
-          </div>
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Prechecked Depth</div>
-            <div className="font-semibold">{generationInfo.solutionDepth ?? '-'}</div>
-          </div>
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Generator</div>
-            <div className="font-semibold">{generationInfo.generatedBy ?? '-'}</div>
-          </div>
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Source</div>
-            <div className="font-semibold">{generationInfo.source ?? '-'}</div>
-          </div>
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Verified</div>
-            <div className="font-semibold">
-              {generationInfo.hasVerifiedSolution ? '해답 있음' : '-'}
-            </div>
-          </div>
-          <div className="rounded bg-slate-50 p-2">
-            <div className="text-xs text-slate-500">Target ID</div>
-            <div className="font-semibold">{generationInfo.targetId ?? '-'}</div>
-          </div>
+        <div className="mt-3 rounded bg-slate-50 p-3 text-xs text-slate-600">
+          Generated by {generationInfo.generatedBy ?? '-'} / attempts {generationInfo.attempts ?? '-'}
+          / target {generationInfo.targetId ?? '-'} /{' '}
+          {generationInfo.hasVerifiedSolution ? '해답 있음' : '해답 미확인'}
         </div>
       ) : null}
 

@@ -74,6 +74,9 @@ export type SearchProgress = {
   elapsedMs: number;
   sampledCells: CellIndex[];
   heatmap: number[];
+  currentRobots?: RobotState;
+  currentMove?: Move;
+  recentMoves?: Move[];
   depthCounts?: Record<number, number>;
   statesPerSecond?: number;
   maxHeat?: number;

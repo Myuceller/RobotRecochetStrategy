@@ -19,6 +19,7 @@ const DEFAULT_MAX_QUEUE_SIZE = 100_000;
 const DEFAULT_CHUNK_SIZE = 1_000;
 const DEFAULT_PROGRESS_INTERVAL = 1_000;
 const MAX_SAMPLED_CELLS = 50;
+const MAX_RECENT_MOVES = 12;
 
 function reconstructPath(
   parentMap: Map<string, ParentEntry>,
@@ -42,17 +43,17 @@ function reconstructPath(
 }
 
 function nowMs(): number {
-  return performance.now();
+  return globalThis.performance?.now() ?? Date.now();
 }
 
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => {
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => resolve());
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      globalThis.requestAnimationFrame(() => resolve());
       return;
     }
 
-    setTimeout(resolve, 0);
+    globalThis.setTimeout(resolve, 0);
   });
 }
 
@@ -65,6 +66,9 @@ function createProgress(
   heatmap: number[],
   sampledCells: CellIndex[],
   depthCounts: Record<number, number>,
+  currentRobots?: RobotState,
+  currentMove?: Move,
+  recentMoves: Move[] = [],
   message?: string
 ): SearchProgress {
   const elapsedMs = Math.round(nowMs() - startedAt);
@@ -80,6 +84,9 @@ function createProgress(
     elapsedMs,
     sampledCells: [...sampledCells],
     heatmap: [...heatmap],
+    currentRobots: currentRobots ? { ...currentRobots } : undefined,
+    currentMove: currentMove ? { ...currentMove } : undefined,
+    recentMoves: recentMoves.map((move) => ({ ...move })),
     depthCounts: { ...depthCounts },
     statesPerSecond,
     maxHeat,
@@ -95,6 +102,14 @@ function pushSample(sampledCells: CellIndex[], cell: CellIndex): void {
   }
 }
 
+function pushRecentMove(recentMoves: Move[], move: Move): void {
+  recentMoves.push(move);
+
+  if (recentMoves.length > MAX_RECENT_MOVES) {
+    recentMoves.splice(0, recentMoves.length - MAX_RECENT_MOVES);
+  }
+}
+
 export async function solvePuzzleWithProgress(
   board: Board,
   puzzle: PuzzleState,
@@ -107,6 +122,7 @@ export async function solvePuzzleWithProgress(
   const progressInterval = options.progressInterval ?? DEFAULT_PROGRESS_INTERVAL;
   const heatmap = Array.from({ length: board.width * board.height }, () => 0);
   const sampledCells: CellIndex[] = [];
+  const recentMoves: Move[] = [];
   const depthCounts: Record<number, number> = {};
   const startedAt = nowMs();
 
@@ -115,6 +131,8 @@ export async function solvePuzzleWithProgress(
     visitedCount: number,
     depth: number,
     frontierSize: number,
+    currentRobots?: RobotState,
+    currentMove?: Move,
     message?: string
   ) => {
     options.onProgress?.(
@@ -127,6 +145,9 @@ export async function solvePuzzleWithProgress(
         heatmap,
         sampledCells,
         depthCounts,
+        currentRobots,
+        currentMove,
+        recentMoves,
         message
       )
     );
@@ -141,7 +162,7 @@ export async function solvePuzzleWithProgress(
   pushSample(sampledCells, startCell);
 
   if (startRobots[puzzle.targetRobot] === puzzle.targetCell) {
-    emitProgress('solved', 1, 0, 0, 'Start state is already solved.');
+    emitProgress('solved', 1, 0, 0, startRobots, undefined, 'Start state is already solved.');
 
     return {
       found: true,
@@ -156,17 +177,27 @@ export async function solvePuzzleWithProgress(
   let head = 0;
   let deepestDepth = 0;
   let processedCount = 0;
+  let lastRobots: RobotState = startRobots;
+  let lastMove: Move | undefined;
 
   const visited = new Set<string>([startKey]);
   const stateMap = new Map<string, RobotState>([[startKey, startRobots]]);
   const parentMap = new Map<string, ParentEntry>();
   const depthMap = new Map<string, number>([[startKey, 0]]);
 
-  emitProgress('running', visited.size, 0, queue.length - head, 'Depth 0 탐색 중');
+  emitProgress('running', visited.size, 0, queue.length - head, startRobots, undefined, 'Depth 0 탐색 중');
 
   while (head < queue.length) {
     if (options.signal?.aborted) {
-      emitProgress('cancelled', visited.size, deepestDepth, queue.length - head, 'Search cancelled.');
+      emitProgress(
+        'cancelled',
+        visited.size,
+        deepestDepth,
+        queue.length - head,
+        lastRobots,
+        lastMove,
+        'Search cancelled.'
+      );
 
       return {
         found: false,
@@ -183,11 +214,18 @@ export async function solvePuzzleWithProgress(
 
     const currentRobots = stateMap.get(currentKey);
     const currentDepth = depthMap.get(currentKey) ?? 0;
+    const currentMove = parentMap.get(currentKey)?.move;
     deepestDepth = Math.max(deepestDepth, currentDepth);
 
     if (!currentRobots) {
       continue;
     }
+
+    if (currentMove) {
+      pushRecentMove(recentMoves, currentMove);
+    }
+    lastRobots = currentRobots;
+    lastMove = currentMove;
 
     const currentTargetCell = currentRobots[puzzle.targetRobot];
     heatmap[currentTargetCell] += 1;
@@ -199,12 +237,22 @@ export async function solvePuzzleWithProgress(
         visited.size,
         currentDepth,
         queue.length - head,
+        currentRobots,
+        currentMove,
         `Depth ${currentDepth} 탐색 중`
       );
     }
 
     if (currentDepth >= maxDepth) {
-      emitProgress('maxDepth', visited.size, currentDepth, queue.length - head, 'Depth limit reached.');
+      emitProgress(
+        'maxDepth',
+        visited.size,
+        currentDepth,
+        queue.length - head,
+        currentRobots,
+        currentMove,
+        'Depth limit reached.'
+      );
 
       return {
         found: false,
@@ -243,6 +291,8 @@ export async function solvePuzzleWithProgress(
           visited.size,
           nextDepth,
           queue.length - head,
+          nextRobots,
+          move,
           'Visited state limit reached.'
         );
 
@@ -261,7 +311,8 @@ export async function solvePuzzleWithProgress(
 
         heatmap[goalCell] += 1;
         pushSample(sampledCells, goalCell);
-        emitProgress('solved', visited.size, solutionMoves.length, queue.length - head, 'Solved.');
+        pushRecentMove(recentMoves, move);
+        emitProgress('solved', visited.size, solutionMoves.length, queue.length - head, nextRobots, move, 'Solved.');
 
         return {
           found: true,
@@ -280,6 +331,8 @@ export async function solvePuzzleWithProgress(
           visited.size,
           nextDepth,
           queue.length - head,
+          nextRobots,
+          move,
           'Queue size limit reached.'
         );
 
@@ -298,7 +351,7 @@ export async function solvePuzzleWithProgress(
     }
   }
 
-  emitProgress('notFound', visited.size, deepestDepth, 0, 'No solution found.');
+  emitProgress('notFound', visited.size, deepestDepth, 0, lastRobots, lastMove, 'No solution found.');
 
   return {
     found: false,
