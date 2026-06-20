@@ -1,7 +1,7 @@
 import { getCellWalls, isInside, toIndex, toPosition } from './board';
 import type { Board, CellIndex, Direction, Move, RobotColor, RobotState } from './types';
 
-const ROBOT_ORDER: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_ORDER: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
 const DIRECTION_ORDER: Direction[] = ['up', 'right', 'down', 'left'];
 
 const DIRECTION_DELTA: Record<Direction, { row: number; col: number }> = {

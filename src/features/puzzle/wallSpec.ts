@@ -1,5 +1,5 @@
 import { addWall, createEmptyBoard, getCenterBlockedCells, hasCornerWalls, toIndex } from './board';
-import type { Board, CellIndex, Direction, PuzzleState, RobotColor } from './types';
+import type { Board, CellIndex, Direction, PuzzleState, RobotColor, TargetRobotColor } from './types';
 
 type WallSpecColor = RobotColor | 'rainbow' | string;
 
@@ -25,7 +25,8 @@ export type WallSpecImportResult = {
   selectedTarget?: WallSpecTarget;
 };
 
-const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+const TARGET_ROBOT_COLORS: TargetRobotColor[] = ['red', 'blue', 'yellow', 'green'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -182,8 +183,8 @@ export function wallSpecToBoard(spec: WallSpec): Board {
   return board;
 }
 
-function isRobotColor(value: string): value is RobotColor {
-  return ROBOT_COLORS.includes(value as RobotColor);
+function isTargetRobotColor(value: string): value is TargetRobotColor {
+  return TARGET_ROBOT_COLORS.includes(value as TargetRobotColor);
 }
 
 function getFallbackRobots(board: Board, targetCell: CellIndex): PuzzleState['robots'] {
@@ -199,6 +200,7 @@ function getFallbackRobots(board: Board, targetCell: CellIndex): PuzzleState['ro
     blue: cells[1],
     yellow: cells[2],
     green: cells[3],
+    black: cells[4],
   };
 }
 
@@ -228,7 +230,7 @@ export function createPuzzleFromWallSpec(
   assert(target !== undefined, 'wallSpec must include at least one target inside a corner wall cell.');
 
   const targetCell = toIndex(target.y, target.x, board);
-  const targetRobot = isRobotColor(target.color)
+  const targetRobot = isTargetRobotColor(target.color)
     ? target.color
     : previousPuzzle?.targetRobot ?? 'red';
   const robots =

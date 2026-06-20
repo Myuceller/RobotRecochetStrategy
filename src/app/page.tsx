@@ -38,6 +38,7 @@ import type {
   RobotState,
   SearchProgress,
   SolveResult,
+  TargetRobotColor,
 } from '../features/puzzle/types';
 import type { PlaybackSpeed } from '../components/PlaybackControls';
 import type {
@@ -72,11 +73,35 @@ type SearchFrame = {
   move?: Move;
 };
 
+type ProofFrame = {
+  robots: RobotState;
+  move: Move;
+  step: number;
+  total: number;
+};
+
 type SearchPlaybackSpeed = 120 | 80 | 40 | 16;
+type SolveRunMode = 'fast' | 'watch';
 
 const MAX_SEARCH_FRAME_QUEUE = 50_000;
 const MAX_SEARCH_REPLAY_FRAMES = 50_000;
 const PROGRESS_STATS_INTERVAL_MS = 80;
+
+function getSearchFramesPerTick(speed: SearchPlaybackSpeed): number {
+  if (speed === 16) {
+    return 80;
+  }
+
+  if (speed === 40) {
+    return 8;
+  }
+
+  if (speed === 80) {
+    return 3;
+  }
+
+  return 1;
+}
 
 export default function Page() {
   const initialSample = samplePuzzles[0];
@@ -107,13 +132,17 @@ export default function Page() {
   const [selectedEditorRobot, setSelectedEditorRobot] = useState<RobotColor>('red');
   const [selectedWallDirection, setSelectedWallDirection] = useState<Direction>('right');
   const [isSolving, setIsSolving] = useState(false);
+  const [solveRunMode, setSolveRunMode] = useState<SolveRunMode | null>(null);
   const [isShowingSearchFrames, setIsShowingSearchFrames] = useState(false);
+  const [isShowingProofFrames, setIsShowingProofFrames] = useState(false);
   const [searchPlaybackSpeed, setSearchPlaybackSpeed] = useState<SearchPlaybackSpeed>(80);
   const [receivedSearchFrameCount, setReceivedSearchFrameCount] = useState(0);
   const [displayedSearchFrameCount, setDisplayedSearchFrameCount] = useState(0);
   const [droppedSearchFrameCount, setDroppedSearchFrameCount] = useState(0);
   const [progress, setProgress] = useState<SearchProgress | null>(null);
   const [searchFrame, setSearchFrame] = useState<SearchFrame | null>(null);
+  const [proofFrame, setProofFrame] = useState<ProofFrame | null>(null);
+  const [savedProofFrameCount, setSavedProofFrameCount] = useState(0);
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [exportedJson, setExportedJson] = useState('');
   const [importText, setImportText] = useState('');
@@ -127,6 +156,10 @@ export default function Page() {
   const searchFrameAnimationRef = useRef<number | null>(null);
   const lastSearchFrameAtRef = useRef(0);
   const lastProgressStatsAtRef = useRef(0);
+  const proofFrameQueueRef = useRef<ProofFrame[]>([]);
+  const proofFrameReplayRef = useRef<ProofFrame[]>([]);
+  const proofFrameAnimationRef = useRef<number | null>(null);
+  const lastProofFrameAtRef = useRef(0);
   const generationWorkerRef = useRef<Worker | null>(null);
   const activeGenerationRequestIdRef = useRef<string | null>(null);
 
@@ -147,11 +180,24 @@ export default function Page() {
         : null,
     [activeBoard, isShowingSearchFrames, searchFrame?.move]
   );
+  const proofMovePath = useMemo(
+    () =>
+      isShowingProofFrames && proofFrame?.move
+        ? getMovePath(activeBoard, proofFrame.move)
+        : null,
+    [activeBoard, isShowingProofFrames, proofFrame?.move]
+  );
   const displayRobots =
-    isShowingSearchFrames && searchFrame?.robots ? searchFrame.robots : currentRobots;
-  const displayMovePath = searchMovePath ?? currentMovePath;
+    isShowingProofFrames && proofFrame?.robots
+      ? proofFrame.robots
+      : isShowingSearchFrames && searchFrame?.robots
+        ? searchFrame.robots
+        : currentRobots;
+  const displayMovePath = proofMovePath ?? searchMovePath ?? currentMovePath;
   const displayMoveRobot =
-    isShowingSearchFrames && searchFrame?.move
+    isShowingProofFrames && proofFrame?.move
+      ? proofFrame.move.robot
+      : isShowingSearchFrames && searchFrame?.move
       ? searchFrame.move.robot
       : currentMove?.robot ?? null;
 
@@ -166,17 +212,29 @@ export default function Page() {
 
     const tick = (timestamp: number) => {
       if (timestamp - lastSearchFrameAtRef.current >= searchPlaybackSpeed) {
-        const nextFrame = searchFrameQueueRef.current.shift();
+        let nextFrame: SearchFrame | undefined;
+        let consumedFrameCount = 0;
+
+        for (let count = 0; count < getSearchFramesPerTick(searchPlaybackSpeed); count += 1) {
+          const frame = searchFrameQueueRef.current.shift();
+
+          if (!frame) {
+            break;
+          }
+
+          nextFrame = frame;
+          consumedFrameCount += 1;
+        }
 
         if (nextFrame) {
           setSearchFrame(nextFrame);
-          setDisplayedSearchFrameCount((current) => current + 1);
+          setDisplayedSearchFrameCount((current) => current + consumedFrameCount);
           lastSearchFrameAtRef.current = timestamp;
+        } else if (!isSolving) {
+          setIsShowingSearchFrames(false);
+          searchFrameAnimationRef.current = null;
+          return;
         }
-      } else if (!isSolving) {
-        setIsShowingSearchFrames(false);
-        searchFrameAnimationRef.current = null;
-        return;
       }
 
       searchFrameAnimationRef.current = requestAnimationFrame(tick);
@@ -191,6 +249,42 @@ export default function Page() {
       }
     };
   }, [isShowingSearchFrames, isSolving, searchPlaybackSpeed]);
+
+  useEffect(() => {
+    if (!isShowingProofFrames) {
+      if (proofFrameAnimationRef.current !== null) {
+        cancelAnimationFrame(proofFrameAnimationRef.current);
+        proofFrameAnimationRef.current = null;
+      }
+      return;
+    }
+
+    const tick = (timestamp: number) => {
+      if (timestamp - lastProofFrameAtRef.current >= searchPlaybackSpeed) {
+        const nextFrame = proofFrameQueueRef.current.shift();
+
+        if (nextFrame) {
+          setProofFrame(nextFrame);
+          lastProofFrameAtRef.current = timestamp;
+        } else {
+          setIsShowingProofFrames(false);
+          proofFrameAnimationRef.current = null;
+          return;
+        }
+      }
+
+      proofFrameAnimationRef.current = requestAnimationFrame(tick);
+    };
+
+    proofFrameAnimationRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (proofFrameAnimationRef.current !== null) {
+        cancelAnimationFrame(proofFrameAnimationRef.current);
+        proofFrameAnimationRef.current = null;
+      }
+    };
+  }, [isShowingProofFrames, searchPlaybackSpeed]);
 
   useEffect(() => {
     if (!isPlayingSolution || !result?.found) {
@@ -266,6 +360,7 @@ export default function Page() {
     }
 
     solveInFlightRef.current = false;
+    setSolveRunMode(null);
   };
 
   const finishGenerationWorker = (worker: Worker, requestId: string) => {
@@ -294,8 +389,11 @@ export default function Page() {
     activeRequestIdRef.current = null;
     solveInFlightRef.current = false;
     setIsSolving(false);
+    setSolveRunMode(null);
     setIsShowingSearchFrames(false);
+    setIsShowingProofFrames(false);
     searchFrameQueueRef.current = [];
+    proofFrameQueueRef.current = [];
   };
 
   const stopActiveGenerationWorker = () => {
@@ -320,16 +418,101 @@ export default function Page() {
     setPrecheckedResult(null);
     setProgress(null);
     setSearchFrame(null);
+    setProofFrame(null);
     setIsShowingSearchFrames(false);
+    setIsShowingProofFrames(false);
     setReceivedSearchFrameCount(0);
     setDisplayedSearchFrameCount(0);
     setDroppedSearchFrameCount(0);
+    setSavedProofFrameCount(0);
     searchFrameQueueRef.current = [];
     searchFrameReplayRef.current = [];
+    proofFrameQueueRef.current = [];
+    proofFrameReplayRef.current = [];
     lastSearchFrameAtRef.current = 0;
     lastProgressStatsAtRef.current = 0;
+    lastProofFrameAtRef.current = 0;
     setWorkerError(null);
     setStepIndex(0);
+  };
+
+  const createProofFrames = (moves: Move[]): ProofFrame[] => {
+    const frames: ProofFrame[] = [];
+    let robots = activePuzzle.robots;
+
+    moves.forEach((move, moveIndex) => {
+      const step = moveIndex + 1;
+      const total = moves.length;
+
+      try {
+        const path = getMovePath(activeBoard, move);
+
+        path.cells.forEach((cell) => {
+          frames.push({
+            robots: {
+              ...robots,
+              [move.robot]: cell,
+            },
+            move,
+            step,
+            total,
+          });
+        });
+      } catch {
+        frames.push({
+          robots: applyMove(robots, move),
+          move,
+          step,
+          total,
+        });
+      }
+
+      robots = applyMove(robots, move);
+    });
+
+    return frames;
+  };
+
+  const startProofReplay = (moves: Move[]) => {
+    if (moves.length === 0) {
+      return;
+    }
+
+    const frames = createProofFrames(moves);
+
+    if (frames.length === 0) {
+      return;
+    }
+
+    setIsShowingSearchFrames(false);
+    searchFrameQueueRef.current = [];
+    proofFrameReplayRef.current = frames;
+    proofFrameQueueRef.current = frames.slice(1);
+    setProofFrame(frames[0]);
+    setSavedProofFrameCount(frames.length);
+    setIsShowingProofFrames(true);
+    lastProofFrameAtRef.current = 0;
+  };
+
+  const handleReplayProof = () => {
+    if (proofFrameReplayRef.current.length === 0 && result?.found) {
+      startProofReplay(result.moves);
+      return;
+    }
+
+    const frames = proofFrameReplayRef.current;
+
+    if (frames.length === 0) {
+      return;
+    }
+
+    setIsPlayingSolution(false);
+    setIsShowingSearchFrames(false);
+    searchFrameQueueRef.current = [];
+    proofFrameQueueRef.current = frames.slice(1);
+    setProofFrame(frames[0]);
+    setIsShowingProofFrames(true);
+    lastProofFrameAtRef.current = 0;
   };
 
   const createSearchVisualFrames = (nextProgress: SearchProgress): SearchFrame[] => {
@@ -535,7 +718,7 @@ export default function Page() {
     applyPuzzleEdit(setTargetCellInPuzzle(activeBoard, activePuzzle, cell));
   };
 
-  const handleTargetRobotChange = (robot: RobotColor) => {
+  const handleTargetRobotChange = (robot: TargetRobotColor) => {
     if (isSolving || isGeneratingPuzzle) {
       return;
     }
@@ -548,12 +731,14 @@ export default function Page() {
       ? canToggleWall(activeBoard, cell, selectedWallDirection)
       : true;
 
-  const handleSolve = () => {
+  const handleSolve = (mode: SolveRunMode) => {
     if (solveInFlightRef.current || isSolving || isGeneratingPuzzle) {
       return;
     }
 
+    const shouldCollectSearchFrames = mode === 'watch';
     solveInFlightRef.current = true;
+    setSolveRunMode(mode);
     setIsPlayingSolution(false);
     const previousRequestId = activeRequestIdRef.current;
 
@@ -579,6 +764,7 @@ export default function Page() {
     } catch (error) {
       solveInFlightRef.current = false;
       setIsSolving(false);
+      setSolveRunMode(null);
       setWorkerError(error instanceof Error ? error.message : 'Solver worker failed to start.');
       return;
     }
@@ -588,14 +774,20 @@ export default function Page() {
     setResult(null);
     setProgress(null);
     setSearchFrame(null);
-    setIsShowingSearchFrames(true);
+    setProofFrame(null);
+    setIsShowingSearchFrames(shouldCollectSearchFrames);
+    setIsShowingProofFrames(false);
     setReceivedSearchFrameCount(0);
     setDisplayedSearchFrameCount(0);
     setDroppedSearchFrameCount(0);
+    setSavedProofFrameCount(0);
     searchFrameQueueRef.current = [];
     searchFrameReplayRef.current = [];
+    proofFrameQueueRef.current = [];
+    proofFrameReplayRef.current = [];
     lastSearchFrameAtRef.current = 0;
     lastProgressStatsAtRef.current = 0;
+    lastProofFrameAtRef.current = 0;
     setWorkerError(null);
     setIsSolving(true);
     setStepIndex(0);
@@ -608,7 +800,9 @@ export default function Page() {
       }
 
       if (message.type === 'progress') {
-        enqueueSearchFrame(message.progress);
+        if (shouldCollectSearchFrames) {
+          enqueueSearchFrame(message.progress);
+        }
 
         const now = performance.now();
         const shouldUpdateStats =
@@ -655,18 +849,24 @@ export default function Page() {
             : currentProgress
         );
         setIsSolving(false);
+        setSolveRunMode(null);
         setStepIndex(0);
+        if (displayResult.found && displayResult.moves.length > 0) {
+          startProofReplay(displayResult.moves);
+        }
         finishActiveWorker(worker, requestId);
         return;
       }
 
       if (precheckedResult?.found) {
         setResult(precheckedResult);
+        startProofReplay(precheckedResult.moves);
         setWorkerError(`${message.message}. Showing prechecked solution.`);
       } else {
         setWorkerError(message.message);
       }
       setIsSolving(false);
+      setSolveRunMode(null);
       setStepIndex(0);
       finishActiveWorker(worker, requestId);
     };
@@ -678,11 +878,13 @@ export default function Page() {
 
       if (precheckedResult?.found) {
         setResult(precheckedResult);
+        startProofReplay(precheckedResult.moves);
         setWorkerError(`${event.message || 'Solver worker failed.'} Showing prechecked solution.`);
       } else {
         setWorkerError(event.message || 'Solver worker failed.');
       }
       setIsSolving(false);
+      setSolveRunMode(null);
       setStepIndex(0);
       finishActiveWorker(worker, requestId);
     };
@@ -696,8 +898,8 @@ export default function Page() {
         maxVisited: 1_000_000,
         maxDepth: 50,
         maxQueueSize: 1_000_000,
-        chunkSize: 1,
-        progressInterval: 1,
+        chunkSize: shouldCollectSearchFrames ? 250 : 5_000,
+        progressInterval: shouldCollectSearchFrames ? 25 : 10_000,
       },
     } satisfies SolverWorkerRequest);
   };
@@ -841,7 +1043,7 @@ export default function Page() {
           <div>
             <h1 className="text-2xl font-semibold tracking-normal">Sliding Robot Lab</h1>
             <p className="mt-1 text-sm text-slate-600">
-              BFS search visualization first. Tools stay collapsed below.
+              Watch the solver search, then replay the exact shortest path it found.
             </p>
           </div>
           <div className="rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
@@ -852,22 +1054,75 @@ export default function Page() {
           </div>
         </div>
 
+        <div className="mb-3 grid gap-2 text-sm md:grid-cols-3">
+          <div className="rounded border border-slate-300 bg-white p-3 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+              1. Run
+            </div>
+            <div className="mt-1 font-semibold">Solve starts BFS</div>
+            <p className="mt-1 text-xs text-slate-600">
+              The worker checks candidate board states by increasing move count.
+            </p>
+          </div>
+          <div className="rounded border border-slate-300 bg-white p-3 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+              2. Search
+            </div>
+            <div className="mt-1 font-semibold">Replay BFS shows attempts</div>
+            <p className="mt-1 text-xs text-slate-600">
+              Heatmap means explored target-robot positions, not the final answer.
+            </p>
+          </div>
+          <div className="rounded border border-emerald-300 bg-emerald-50 p-3 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-normal text-emerald-700">
+              3. Proof
+            </div>
+            <div className="mt-1 font-semibold text-emerald-950">Replay Proof shows the answer</div>
+            <p className="mt-1 text-xs text-emerald-800">
+              This is the parent-chain path from start state to goal state.
+            </p>
+          </div>
+        </div>
+
         <section className="grid items-start gap-3 xl:grid-cols-[minmax(520px,780px)_minmax(300px,390px)_340px]">
           <div className="rounded border border-slate-300 bg-white p-2 shadow-sm">
             <BoardView
               board={activeBoard}
               robots={displayRobots}
+              initialRobots={activePuzzle.robots}
               targetRobot={activePuzzle.targetRobot}
               targetCell={activePuzzle.targetCell}
-              heatmap={progress?.heatmap}
-              sampledCells={progress?.sampledCells}
-              maxHeat={progress?.maxHeat}
+              heatmap={isShowingProofFrames ? undefined : progress?.heatmap}
+              sampledCells={isShowingProofFrames ? undefined : progress?.sampledCells}
+              maxHeat={isShowingProofFrames ? undefined : progress?.maxHeat}
               currentMovePath={displayMovePath}
               activeMoveRobot={displayMoveRobot}
               editable={editorMode !== 'off' && !isSolving && !isGeneratingPuzzle}
               isCellEditable={canEditCell}
               onCellClick={handleEditorCellClick}
             />
+            <div className="grid gap-2 border-t border-slate-200 px-2 py-3 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex items-center gap-2">
+                <span className="h-4 w-4 rounded border border-amber-300 bg-amber-200" />
+                <span>Heatmap: searched target-robot positions</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-4 w-4 rounded border border-sky-300 bg-sky-200" />
+                <span>Blue path: move currently being replayed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-4 w-4 rounded border border-emerald-400 bg-emerald-200" />
+                <span>Proof mode: final shortest path only</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-4 w-4 rounded border border-slate-800 bg-slate-700" />
+                <span>Dark blocks: walls or blocked center cells</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-4 w-4 rounded-sm border border-slate-400 bg-slate-400/60" />
+                <span>Filled squares: robot starting positions</span>
+              </div>
+            </div>
           </div>
           <SearchProgressPanel
             progress={progress}
@@ -882,15 +1137,24 @@ export default function Page() {
             canReplay={searchFrameReplayRef.current.length > 0}
             replayFrameCount={searchFrameReplayRef.current.length}
             onReplay={handleReplaySearchFrames}
+            isShowingProof={isShowingProofFrames}
+            proofMove={proofFrame?.move}
+            proofStep={proofFrame?.step ?? 0}
+            proofTotal={proofFrame?.total ?? result?.moves.length ?? 0}
+            proofFrameCount={savedProofFrameCount}
+            canReplayProof={Boolean(result?.found && result.moves.length > 0)}
+            onReplayProof={handleReplayProof}
           />
           <SolutionPanel
             board={activeBoard}
             result={result}
             stepIndex={stepIndex}
             setStepIndex={handleManualStepIndexChange}
-            onSolve={handleSolve}
+            onFindAnswer={() => handleSolve('fast')}
+            onWatchBfs={() => handleSolve('watch')}
             onCancel={handleCancel}
             isSolving={isSolving}
+            solveRunMode={solveRunMode}
             isSolveDisabled={isGeneratingPuzzle}
             isPlaying={isPlayingSolution}
             playbackSpeed={playbackSpeed}

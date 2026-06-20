@@ -1,4 +1,6 @@
-export type RobotColor = 'red' | 'blue' | 'yellow' | 'green';
+export type TargetRobotColor = 'red' | 'blue' | 'yellow' | 'green';
+
+export type RobotColor = TargetRobotColor | 'black';
 
 export type Direction = 'up' | 'right' | 'down' | 'left';
 
@@ -26,7 +28,7 @@ export type RobotState = Record<RobotColor, CellIndex>;
 
 export type PuzzleState = {
   robots: RobotState;
-  targetRobot: RobotColor;
+  targetRobot: TargetRobotColor;
   targetCell: CellIndex;
 };
 

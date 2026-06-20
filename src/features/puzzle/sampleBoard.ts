@@ -24,6 +24,7 @@ export const samplePuzzle: PuzzleState = {
     blue: toIndex(0, 6, sampleBoard),
     yellow: toIndex(5, 5, sampleBoard),
     green: toIndex(12, 12, sampleBoard),
+    black: toIndex(15, 15, sampleBoard),
   },
   targetRobot: 'red',
   targetCell: toIndex(0, 5, sampleBoard),

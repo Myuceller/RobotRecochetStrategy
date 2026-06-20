@@ -8,9 +8,11 @@ type SolutionPanelProps = {
   result: SolveResult | null;
   stepIndex: number;
   setStepIndex: Dispatch<SetStateAction<number>>;
-  onSolve: () => void;
+  onFindAnswer: () => void;
+  onWatchBfs: () => void;
   onCancel: () => void;
   isSolving: boolean;
+  solveRunMode?: 'fast' | 'watch' | null;
   isSolveDisabled?: boolean;
   isPlaying: boolean;
   playbackSpeed: PlaybackSpeed;
@@ -59,9 +61,11 @@ export function SolutionPanel({
   result,
   stepIndex,
   setStepIndex,
-  onSolve,
+  onFindAnswer,
+  onWatchBfs,
   onCancel,
   isSolving,
+  solveRunMode = null,
   isSolveDisabled = false,
   isPlaying,
   playbackSpeed,
@@ -78,17 +82,25 @@ export function SolutionPanel({
         <div>
           <h2 className="text-lg font-semibold">Run BFS</h2>
           <p className="text-sm text-slate-600">
-            Step {stepIndex} / {moveCount}
+            Answer step {stepIndex} / {moveCount}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
-            onClick={onSolve}
+            onClick={onFindAnswer}
             disabled={isSolving || isSolveDisabled}
             className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isSolving ? 'Running...' : 'Solve'}
+            {isSolving && solveRunMode === 'fast' ? 'Finding...' : 'Find Answer'}
+          </button>
+          <button
+            type="button"
+            onClick={onWatchBfs}
+            disabled={isSolving || isSolveDisabled}
+            className="rounded border border-slate-900 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+          >
+            {isSolving && solveRunMode === 'watch' ? 'Watching...' : 'Watch BFS'}
           </button>
           <button
             type="button"
@@ -104,16 +116,20 @@ export function SolutionPanel({
       <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
         {isSolving ? (
           <p className="text-slate-600">
-            BFS가 상태를 하나씩 꺼내 보드에 표시하는 중입니다.
+            {solveRunMode === 'watch'
+              ? 'Collecting BFS frames for visualization.'
+              : 'Finding the shortest answer as fast as possible.'}
           </p>
         ) : !result ? (
-          <p className="text-slate-600">Solve를 누르면 탐색 과정이 보드와 BFS 패널에 표시됩니다.</p>
+          <p className="text-slate-600">
+            Find Answer is fast. Watch BFS records candidate attempts for replay.
+          </p>
         ) : result.found ? (
           <div className="space-y-1">
-            <p className="font-semibold">최단 경로 {result.moves.length} moves</p>
+            <p className="font-semibold">Shortest path: {result.moves.length} moves</p>
             <p>Visited states: {result.visitedCount}</p>
             <p>Depth: {result.depth}</p>
-            <p>Reason: {result.reason}</p>
+            <p>Result: {result.reason}</p>
           </div>
         ) : (
           <div className="space-y-2 rounded border border-red-200 bg-red-50 p-3 text-red-800">

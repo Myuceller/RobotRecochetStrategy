@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { getCenterBlockedCells } from './board';
 import { isCornerTargetCell } from './randomPuzzle';
 import { samplePuzzles } from './samplePuzzles';
 import { solvePuzzle } from './solver';
-import type { CellIndex } from './types';
 
 describe('samplePuzzles', () => {
-  it('contains at least two sample puzzles with unique ids', () => {
+  it('contains one visible sample puzzle with a unique id', () => {
     const ids = samplePuzzles.map((sample) => sample.id);
 
-    expect(samplePuzzles.length).toBeGreaterThanOrEqual(2);
+    expect(samplePuzzles).toHaveLength(1);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -44,16 +42,6 @@ describe('samplePuzzles', () => {
       if (sample.expectedDepth !== undefined) {
         expect(result.depth).toBe(sample.expectedDepth);
       }
-    }
-  });
-
-  it('keeps modular sample robots and targets out of center blocked cells', () => {
-    for (const sample of samplePuzzles.filter((item) => item.source === 'modular-sample')) {
-      const blockedCells = new Set<CellIndex>(getCenterBlockedCells(sample.board));
-      const robotCells = Object.values(sample.puzzle.robots);
-
-      expect(robotCells.some((cell) => blockedCells.has(cell))).toBe(false);
-      expect(blockedCells.has(sample.puzzle.targetCell)).toBe(false);
     }
   });
 

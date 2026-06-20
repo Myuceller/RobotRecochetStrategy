@@ -90,6 +90,7 @@ export const fixedUserPuzzle: PuzzleState = {
     blue: toIndex(13, 6, fixedUserBoard),
     yellow: toIndex(1, 5, fixedUserBoard),
     green: toIndex(6, 12, fixedUserBoard),
+    black: toIndex(15, 15, fixedUserBoard),
   },
   targetRobot: 'yellow',
   targetCell: toIndex(1, 2, fixedUserBoard),

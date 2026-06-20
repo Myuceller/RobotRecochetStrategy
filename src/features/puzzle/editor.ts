@@ -1,5 +1,5 @@
 import { hasCornerWalls, isCenterBlockedCell, isInside, toPosition, toggleWall } from './board';
-import type { Board, CellIndex, Direction, Position, PuzzleState, RobotColor } from './types';
+import type { Board, CellIndex, Direction, Position, PuzzleState, RobotColor, TargetRobotColor } from './types';
 
 const DIRECTION_DELTA: Record<Direction, Position> = {
   up: { row: -1, col: 0 },
@@ -75,7 +75,7 @@ export function setTargetCellInPuzzle(
 
 export function setTargetRobotInPuzzle(
   puzzle: PuzzleState,
-  robot: RobotColor
+  robot: TargetRobotColor
 ): PuzzleState {
   return {
     ...puzzle,

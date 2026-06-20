@@ -10,6 +10,7 @@ const ROBOT_STYLES: Record<RobotColor, string> = {
   blue: 'bg-blue-500 text-white border-blue-700',
   yellow: 'bg-yellow-300 text-slate-950 border-yellow-500',
   green: 'bg-emerald-500 text-white border-emerald-700',
+  black: 'bg-slate-950 text-white border-slate-700',
 };
 
 const ROBOT_LABELS: Record<RobotColor, string> = {
@@ -17,6 +18,7 @@ const ROBOT_LABELS: Record<RobotColor, string> = {
   blue: 'B',
   yellow: 'Y',
   green: 'G',
+  black: 'K',
 };
 
 export function RobotToken({ robot, isActive = false }: RobotTokenProps) {

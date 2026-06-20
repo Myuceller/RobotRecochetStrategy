@@ -21,6 +21,7 @@ const puzzle: PuzzleState = {
     blue: toIndex(0, 1, board),
     yellow: toIndex(2, 2, board),
     green: toIndex(3, 3, board),
+    black: toIndex(4, 5, board),
   },
   targetRobot: 'red',
   targetCell: toIndex(4, 4, board),
@@ -42,7 +43,7 @@ describe('puzzle editor helpers', () => {
   it('keeps robot positions distinct after moving a robot', () => {
     const updated = moveRobotInPuzzle(board, puzzle, 'red', toIndex(5, 5, board));
 
-    expect(new Set(Object.values(updated.robots)).size).toBe(4);
+    expect(new Set(Object.values(updated.robots)).size).toBe(5);
     expect(updated.robots.red).toBe(toIndex(5, 5, board));
   });
 

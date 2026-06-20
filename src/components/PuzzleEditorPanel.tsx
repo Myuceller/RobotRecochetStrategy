@@ -1,21 +1,22 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { Direction, RobotColor } from '../features/puzzle/types';
+import type { Direction, RobotColor, TargetRobotColor } from '../features/puzzle/types';
 
 export type EditorMode = 'off' | 'placeRobot' | 'placeTarget' | 'toggleWall';
 
-const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+const TARGET_ROBOT_COLORS: TargetRobotColor[] = ['red', 'blue', 'yellow', 'green'];
 const DIRECTIONS: Direction[] = ['up', 'right', 'down', 'left'];
 
 type PuzzleEditorPanelProps = {
   editorMode: EditorMode;
   selectedEditorRobot: RobotColor;
   selectedWallDirection: Direction;
-  targetRobot: RobotColor;
+  targetRobot: TargetRobotColor;
   disabled?: boolean;
   onEditorModeChange: Dispatch<SetStateAction<EditorMode>>;
   onSelectedEditorRobotChange: (robot: RobotColor) => void;
   onSelectedWallDirectionChange: (direction: Direction) => void;
-  onTargetRobotChange: (robot: RobotColor) => void;
+  onTargetRobotChange: (robot: TargetRobotColor) => void;
 };
 
 export function PuzzleEditorPanel({
@@ -108,7 +109,7 @@ export function PuzzleEditorPanel({
           <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
             Robot
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             {ROBOT_COLORS.map((robot) => (
               <button
                 key={robot}
@@ -159,12 +160,12 @@ export function PuzzleEditorPanel({
           id="target-robot"
           value={targetRobot}
           disabled={disabled}
-          onChange={(event) => onTargetRobotChange(event.target.value as RobotColor)}
+          onChange={(event) => onTargetRobotChange(event.target.value as TargetRobotColor)}
           className={`w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm capitalize text-slate-900 ${
             disabled ? 'cursor-not-allowed opacity-50' : ''
           }`}
         >
-          {ROBOT_COLORS.map((robot) => (
+          {TARGET_ROBOT_COLORS.map((robot) => (
             <option key={robot} value={robot}>
               {robot}
             </option>

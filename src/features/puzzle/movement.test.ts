@@ -9,6 +9,7 @@ function createRobots(board = createEmptyBoard(4, 4)): RobotState {
     blue: toIndex(3, 3, board),
     yellow: toIndex(0, 3, board),
     green: toIndex(3, 0, board),
+    black: toIndex(2, 2, board),
   };
 }
 
@@ -40,6 +41,7 @@ describe('movement', () => {
       blue: toIndex(1, 3, board),
       yellow: toIndex(0, 3, board),
       green: toIndex(3, 0, board),
+      black: toIndex(2, 2, board),
     };
 
     expect(slideRobot(board, robots, 'red', 'right')?.to).toBe(toIndex(1, 2, board));
@@ -53,6 +55,7 @@ describe('movement', () => {
       blue: toIndex(3, 3, board),
       yellow: toIndex(0, 3, board),
       green: toIndex(3, 0, board),
+      black: toIndex(2, 2, board),
     };
 
     expect(slideRobot(board, robots, 'red', 'up')).toBeNull();

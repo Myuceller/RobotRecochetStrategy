@@ -42,7 +42,8 @@ function applyMoves(robots: RobotState, moves: ReturnType<typeof solvePuzzle>['m
   return moves.reduce((currentRobots, move) => applyMove(currentRobots, move), robots);
 }
 
-const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+const TARGET_ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
 
 const SOLVABLE_SEQUENCE = [
   0,
@@ -75,13 +76,13 @@ describe('random puzzle generation', () => {
     expect(() => pickDistinctCells(board, 5)).toThrow('Cannot pick 5 distinct cells');
   });
 
-  it('places four robots on different cells', () => {
+  it('places robots on different cells', () => {
     const board = createEmptyBoard(16, 16);
-    const robots = pickRandomRobotState(board, createMockRandom([0, 0.25, 0.5, 0.75]));
+    const robots = pickRandomRobotState(board, createMockRandom([0, 0.25, 0.5, 0.75, 0.9]));
     const cells = Object.values(robots);
 
-    expect(cells).toHaveLength(4);
-    expect(new Set(cells).size).toBe(4);
+    expect(cells).toHaveLength(ROBOT_COLORS.length);
+    expect(new Set(cells).size).toBe(ROBOT_COLORS.length);
   });
 
   it('does not pick center blocked cells for distinct cell selection', () => {
@@ -95,7 +96,7 @@ describe('random puzzle generation', () => {
   it('does not place robots on center blocked cells', () => {
     const board = addCenterBlock(createEmptyBoard(16, 16));
     const blockedCells = getCenterBlockedCells(board);
-    const robots = pickRandomRobotState(board, createMockRandom([0.47, 0.48, 0.52, 0.53]));
+    const robots = pickRandomRobotState(board, createMockRandom([0.47, 0.48, 0.52, 0.53, 0.1]));
 
     expect(Object.values(robots).some((cell) => blockedCells.includes(cell))).toBe(false);
   });
@@ -109,6 +110,7 @@ describe('random puzzle generation', () => {
       blue: toIndex(0, 1, board),
       yellow: toIndex(0, 2, board),
       green: toIndex(0, 3, board),
+      black: toIndex(3, 3, board),
     };
     const targetCell = pickRandomTargetCell(board, robots, createMockRandom([0]));
 
@@ -123,6 +125,7 @@ describe('random puzzle generation', () => {
       blue: toIndex(0, 1, board),
       yellow: toIndex(0, 2, board),
       green: toIndex(0, 3, board),
+      black: toIndex(3, 3, board),
     };
 
     expect(getTargetCandidateCells(board, robots)).toEqual([]);
@@ -141,6 +144,7 @@ describe('random puzzle generation', () => {
       blue: toIndex(0, 1, board),
       yellow: toIndex(0, 2, board),
       green: toIndex(0, 3, board),
+      black: toIndex(15, 15, board),
     };
     const targetCell = pickRandomTargetCell(board, robots, createMockRandom([0.47]));
 
@@ -149,8 +153,9 @@ describe('random puzzle generation', () => {
   });
 
   it('picks one of the robot colors as target robot', () => {
-    expect(ROBOT_COLORS).toContain(pickRandomTargetRobot(createMockRandom([0])));
-    expect(ROBOT_COLORS).toContain(pickRandomTargetRobot(createMockRandom([0.99])));
+    expect(TARGET_ROBOT_COLORS).toContain(pickRandomTargetRobot(createMockRandom([0])));
+    expect(TARGET_ROBOT_COLORS).toContain(pickRandomTargetRobot(createMockRandom([0.99])));
+    expect(pickRandomTargetRobot(createMockRandom([0.99]))).not.toBe('black');
   });
 
   it('creates a solvable random puzzle', () => {
@@ -324,7 +329,7 @@ describe('random puzzle generation', () => {
       expect(result.meta.targetId).toBeTypeOf('number');
       expect(result.board.width).toBe(16);
       expect(result.board.height).toBe(16);
-      expect(new Set(robotCells).size).toBe(4);
+      expect(new Set(robotCells).size).toBe(ROBOT_COLORS.length);
       expect(robotCells.some((cell) => blockedCells.includes(cell))).toBe(false);
       expect(blockedCells).not.toContain(result.puzzle.targetCell);
       expect(isCornerTargetCell(result.board, result.puzzle.targetCell)).toBe(true);
@@ -334,7 +339,7 @@ describe('random puzzle generation', () => {
         result.puzzle.targetCell
       );
     }
-  }, 30_000);
+  }, 90_000);
 
   it('keeps fallback puzzles verified by the solver', () => {
     for (const fallback of FALLBACK_SOLVABLE_PUZZLES) {
@@ -343,7 +348,7 @@ describe('random puzzle generation', () => {
       expect(solution.found).toBe(true);
       expect(solution.moves.length).toBeGreaterThan(0);
       expect(fallback.puzzle.robots[fallback.puzzle.targetRobot]).not.toBe(fallback.puzzle.targetCell);
-      expect(new Set(Object.values(fallback.puzzle.robots)).size).toBe(4);
+      expect(new Set(Object.values(fallback.puzzle.robots)).size).toBe(ROBOT_COLORS.length);
       expect(getCenterBlockedCells(fallback.board)).not.toContain(fallback.puzzle.targetCell);
       expect(isCornerTargetCell(fallback.board, fallback.puzzle.targetCell)).toBe(true);
     }

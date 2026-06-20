@@ -640,6 +640,7 @@ describe('module board utilities', () => {
       blue: toIndex(0, 6, sampleModularBoard),
       yellow: toIndex(5, 5, sampleModularBoard),
       green: toIndex(12, 12, sampleModularBoard),
+      black: toIndex(15, 15, sampleModularBoard),
     };
 
     expect(generateMoves(sampleModularBoard, robots).length).toBeGreaterThan(0);

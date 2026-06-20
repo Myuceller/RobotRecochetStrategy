@@ -7,10 +7,10 @@ import {
 import { solvePuzzle } from './solver';
 import { getCenterBlockedCells, hasCornerWalls } from './board';
 import type { BoardModule } from './moduleTypes';
-import type { Board, CellIndex, PuzzleState, RobotColor, SolveResult } from './types';
+import type { Board, CellIndex, PuzzleState, RobotColor, SolveResult, TargetRobotColor } from './types';
 
 type RobotColorPhotoTarget = QuadrantTarget & {
-  color: RobotColor;
+  color: TargetRobotColor;
 };
 
 export type RandomSource = () => number;
@@ -49,7 +49,8 @@ export type RandomPuzzleResult = {
   };
 };
 
-const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+const TARGET_ROBOT_COLORS: TargetRobotColor[] = ['red', 'blue', 'yellow', 'green'];
 const PHOTO_QUADRANT_FALLBACK_RANDOM_VALUES = [
   0,
   0,
@@ -116,20 +117,25 @@ export function pickRandomRobotState(
   board: Board,
   random?: RandomSource
 ): PuzzleState['robots'] {
-  const [red, blue, yellow, green] = pickDistinctCells(board, ROBOT_COLORS.length, random);
+  const [red, blue, yellow, green, black] = pickDistinctCells(
+    board,
+    ROBOT_COLORS.length,
+    random
+  );
 
   return {
     red,
     blue,
     yellow,
     green,
+    black,
   };
 }
 
-export function pickRandomTargetRobot(random?: RandomSource): RobotColor {
+export function pickRandomTargetRobot(random?: RandomSource): TargetRobotColor {
   const source = getRandomSource(random);
 
-  return ROBOT_COLORS[getRandomIndex(ROBOT_COLORS.length, source)];
+  return TARGET_ROBOT_COLORS[getRandomIndex(TARGET_ROBOT_COLORS.length, source)];
 }
 
 export function isCornerTargetCell(board: Board, cell: CellIndex): boolean {
@@ -167,8 +173,8 @@ export function pickRandomTargetCell(
   return candidates[getRandomIndex(candidates.length, source)];
 }
 
-function isRobotColor(value: string): value is RobotColor {
-  return ROBOT_COLORS.includes(value as RobotColor);
+function isTargetRobotColor(value: string): value is TargetRobotColor {
+  return TARGET_ROBOT_COLORS.includes(value as TargetRobotColor);
 }
 
 function getPhotoTargetCandidates(
@@ -180,7 +186,7 @@ function getPhotoTargetCandidates(
   const blockedCells = new Set(getCenterBlockedCells(board));
 
   return composed.targets.filter((target): target is RobotColorPhotoTarget => {
-    if (!isRobotColor(target.color)) {
+    if (!isTargetRobotColor(target.color)) {
       return false;
     }
 

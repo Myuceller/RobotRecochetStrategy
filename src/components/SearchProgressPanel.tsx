@@ -15,6 +15,13 @@ type SearchProgressPanelProps = {
   canReplay?: boolean;
   replayFrameCount?: number;
   onReplay?: () => void;
+  isShowingProof?: boolean;
+  proofMove?: SearchProgress['currentMove'];
+  proofStep?: number;
+  proofTotal?: number;
+  proofFrameCount?: number;
+  canReplayProof?: boolean;
+  onReplayProof?: () => void;
 };
 
 function formatElapsed(ms: number): string {
@@ -109,6 +116,13 @@ export function SearchProgressPanel({
   canReplay = false,
   replayFrameCount = 0,
   onReplay,
+  isShowingProof = false,
+  proofMove,
+  proofStep = 0,
+  proofTotal = 0,
+  proofFrameCount = 0,
+  canReplayProof = false,
+  onReplayProof,
 }: SearchProgressPanelProps) {
   const playbackSpeeds: Array<{ value: SearchPlaybackSpeed; label: string }> = [
     { value: 120, label: 'slow' },
@@ -120,14 +134,12 @@ export function SearchProgressPanel({
   if (!progress) {
     return (
       <section className="rounded border border-slate-300 bg-white p-4 text-sm shadow-sm">
-        <h2 className="text-base font-semibold">BFS Search Explorer</h2>
+        <h2 className="text-base font-semibold">Search and Proof</h2>
         <p className="mt-2 text-slate-600">
-          Solve를 누르면 BFS가 상태를 하나씩 꺼내고, 그 상태의 로봇 위치가 보드에 바로
-          표시됩니다.
+          Use Find Answer for speed, or Watch BFS to record candidate attempts.
         </p>
         <div className="mt-3 rounded bg-slate-50 p-3 text-xs text-slate-600">
-          목표 로봇이 많이 지나간 칸은 heatmap으로 남고, 방금 꺼낸 move는 보드 위 경로로
-          강조됩니다.
+          Use Replay BFS for the broad search, and Replay Proof for the actual solution chain.
         </div>
       </section>
     );
@@ -148,9 +160,9 @@ export function SearchProgressPanel({
     <section className="rounded border border-slate-300 bg-white p-4 text-sm shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">BFS Search Explorer</h2>
+          <h2 className="text-base font-semibold">Search and Proof</h2>
           <p className="mt-1 text-xs text-slate-500">
-            같은 depth의 모든 상태를 처리한 뒤 다음 move 수로 확장합니다.
+            BFS searches candidates. Proof replay shows the exact answer branch.
           </p>
         </div>
         <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
@@ -178,10 +190,10 @@ export function SearchProgressPanel({
 
       {displayMove ? (
         <div className="mt-3 rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
-          <div className="font-semibold">Now expanding</div>
+          <div className="font-semibold">Current candidate move</div>
           <div className="mt-1 font-mono">{formatMove(displayMove)}</div>
           <div className="mt-1 text-sky-700">
-            이 move를 적용한 상태가 지금 보드에 표시됩니다.
+            This is one candidate being checked, not necessarily the final answer.
           </div>
         </div>
       ) : (
@@ -209,10 +221,10 @@ export function SearchProgressPanel({
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
-              Frame Stream
+              BFS Search Replay
             </div>
             <div className="mt-1 text-xs text-slate-600">
-              BFS 후보 상태를 받고, 각 move를 미끄러지는 칸 단위 프레임으로 펼쳐 재생합니다.
+              Shows many attempted candidate states. Use turbo to scan the whole search quickly.
             </div>
           </div>
           <div className="text-right text-xs text-slate-500">
@@ -221,19 +233,19 @@ export function SearchProgressPanel({
         </div>
         <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
           <div className="rounded bg-slate-50 p-2">
-            <div className="text-slate-500">BFS States</div>
+            <div className="text-slate-500">Candidates</div>
             <div className="font-semibold">{receivedFrameCount.toLocaleString()}</div>
           </div>
           <div className="rounded bg-slate-50 p-2">
-            <div className="text-slate-500">Shown Frames</div>
+            <div className="text-slate-500">Shown</div>
             <div className="font-semibold">{displayedFrameCount.toLocaleString()}</div>
           </div>
           <div className="rounded bg-slate-50 p-2">
-            <div className="text-slate-500">Dropped Frames</div>
+            <div className="text-slate-500">Dropped</div>
             <div className="font-semibold">{droppedFrameCount.toLocaleString()}</div>
           </div>
           <div className="rounded bg-slate-50 p-2">
-            <div className="text-slate-500">Saved Frames</div>
+            <div className="text-slate-500">Saved</div>
             <div className="font-semibold">{replayFrameCount.toLocaleString()}</div>
           </div>
         </div>
@@ -268,6 +280,57 @@ export function SearchProgressPanel({
       <p className="mt-3 text-slate-600">
         {progress.message ?? `Depth ${progress.depth} 탐색 중`}
       </p>
+
+      <div
+        className={`mt-3 rounded border p-3 ${
+          isShowingProof
+            ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+            : canReplayProof
+              ? 'border-emerald-200 bg-white text-slate-700'
+              : 'border-slate-200 bg-white text-slate-700'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+              Answer Proof Replay
+            </div>
+            <div className="mt-1 text-xs">
+              Shows only the shortest path reconstructed after BFS finds the goal.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onReplayProof}
+            disabled={!canReplayProof}
+            className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            Replay Proof
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+          <div className="rounded bg-white/70 p-2">
+            <div className="text-slate-500">Step</div>
+            <div className="font-semibold">
+              {proofTotal > 0 ? `${proofStep} / ${proofTotal}` : '-'}
+            </div>
+          </div>
+          <div className="rounded bg-white/70 p-2">
+            <div className="text-slate-500">Frames</div>
+            <div className="font-semibold">{proofFrameCount.toLocaleString()}</div>
+          </div>
+          <div className="rounded bg-white/70 p-2">
+            <div className="text-slate-500">Status</div>
+            <div className="font-semibold">{isShowingProof ? 'replaying' : 'ready'}</div>
+          </div>
+        </div>
+        {proofMove ? (
+          <div className="mt-3 rounded border border-emerald-200 bg-white/80 p-2 text-xs">
+            <div className="font-semibold">Current proof move</div>
+            <div className="mt-1 font-mono">{formatMove(proofMove)}</div>
+          </div>
+        ) : null}
+      </div>
 
       {progress.recentMoves && progress.recentMoves.length > 0 ? (
         <div className="mt-3 rounded border border-slate-200 bg-white p-3">

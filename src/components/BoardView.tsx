@@ -1,16 +1,25 @@
 import { getCellWalls, isCenterBlockedCell } from '../features/puzzle/board';
-import type { Board, CellIndex, RobotColor, RobotState } from '../features/puzzle/types';
+import type { Board, CellIndex, RobotColor, RobotState, TargetRobotColor } from '../features/puzzle/types';
 import type { MovePath } from '../features/puzzle/playback';
 import { BoardCell } from './BoardCell';
 import { RobotToken } from './RobotToken';
 import { TargetMarker } from './TargetMarker';
 
-const ROBOT_ORDER: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_ORDER: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+
+const INITIAL_MARKER_STYLES: Record<RobotColor, string> = {
+  red: 'bg-red-300/65',
+  blue: 'bg-blue-300/65',
+  yellow: 'bg-yellow-200/80',
+  green: 'bg-emerald-300/65',
+  black: 'bg-slate-700/65',
+};
 
 type BoardViewProps = {
   board: Board;
   robots: RobotState;
-  targetRobot: RobotColor;
+  initialRobots?: RobotState;
+  targetRobot: TargetRobotColor;
   targetCell: CellIndex;
   heatmap?: number[];
   sampledCells?: CellIndex[];
@@ -35,6 +44,7 @@ function getRobotAt(robots: RobotState, index: CellIndex): RobotColor | null {
 export function BoardView({
   board,
   robots,
+  initialRobots,
   targetRobot,
   targetCell,
   heatmap,
@@ -64,6 +74,7 @@ export function BoardView({
           const cellIndex = index as CellIndex;
           const isBlocked = isCenterBlockedCell(board, cellIndex);
           const robot = isBlocked ? null : getRobotAt(robots, cellIndex);
+          const initialRobot = initialRobots && !isBlocked ? getRobotAt(initialRobots, cellIndex) : null;
           const isTarget = !isBlocked && cellIndex === targetCell;
           const pathRole =
             currentMovePath && cellIndex === currentMovePath.from
@@ -88,6 +99,12 @@ export function BoardView({
               pathRole={pathRole}
               onClick={canEditCell && onCellClick ? () => onCellClick(cellIndex) : undefined}
             >
+              {initialRobot ? (
+                <div
+                  className={`absolute inset-[9%] z-0 rounded-sm ${INITIAL_MARKER_STYLES[initialRobot]}`}
+                  aria-label={`${initialRobot} initial position`}
+                />
+              ) : null}
               {isTarget ? <TargetMarker robot={targetRobot} /> : null}
               {robot ? <RobotToken robot={robot} isActive={robot === activeMoveRobot} /> : null}
             </BoardCell>

@@ -1,5 +1,5 @@
 import { getCenterBlockedCells, hasCornerWalls, isCenterBlockedCell } from './board';
-import type { Board, CellIndex, CellWalls, PuzzleState, RobotColor } from './types';
+import type { Board, CellIndex, CellWalls, PuzzleState, RobotColor, TargetRobotColor } from './types';
 
 export type ExportedPuzzleFormatVersion = 1;
 
@@ -15,7 +15,8 @@ export type ExportedPuzzle = {
   };
 };
 
-const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green'];
+const ROBOT_COLORS: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+const TARGET_ROBOT_COLORS: TargetRobotColor[] = ['red', 'blue', 'yellow', 'green'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,7 +84,7 @@ function validatePuzzle(value: unknown, board: Board): PuzzleState {
 
   assert(new Set(robotCells).size === ROBOT_COLORS.length, 'robot positions must be distinct.');
   assert(
-    ROBOT_COLORS.includes(value.targetRobot as RobotColor),
+    TARGET_ROBOT_COLORS.includes(value.targetRobot as TargetRobotColor),
     'puzzle.targetRobot must be red, blue, yellow, or green.'
   );
 
@@ -102,7 +103,7 @@ function validatePuzzle(value: unknown, board: Board): PuzzleState {
 
   return {
     robots,
-    targetRobot: value.targetRobot as RobotColor,
+    targetRobot: value.targetRobot as TargetRobotColor,
     targetCell,
   };
 }

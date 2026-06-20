@@ -1,10 +1,10 @@
-import type { RobotColor } from '../features/puzzle/types';
+import type { TargetRobotColor } from '../features/puzzle/types';
 
 type TargetMarkerProps = {
-  robot: RobotColor;
+  robot: TargetRobotColor;
 };
 
-const TARGET_STYLES: Record<RobotColor, string> = {
+const TARGET_STYLES: Record<TargetRobotColor, string> = {
   red: 'border-red-500 bg-red-100',
   blue: 'border-blue-500 bg-blue-100',
   yellow: 'border-yellow-500 bg-yellow-100',
