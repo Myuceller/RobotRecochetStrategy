@@ -1,0 +1,174 @@
+import { getCellWalls, isCenterBlockedCell } from '../features/puzzle/board';
+import type { Board, CellIndex, RobotColor, RobotState, TargetRobotColor } from '../features/puzzle/types';
+import type { MovePath } from '../features/puzzle/playback';
+import { BoardCell } from './BoardCell';
+import { RobotToken } from './RobotToken';
+import { TargetMarker } from './TargetMarker';
+
+const ROBOT_ORDER: RobotColor[] = ['red', 'blue', 'yellow', 'green', 'black'];
+
+const INITIAL_MARKER_STYLES: Record<RobotColor, string> = {
+  red: 'bg-red-300/65',
+  blue: 'bg-blue-300/65',
+  yellow: 'bg-yellow-200/80',
+  green: 'bg-emerald-300/65',
+  black: 'bg-slate-700/65',
+};
+
+const TARGET_BADGE_STYLES: Record<TargetRobotColor, string> = {
+  red: 'border-red-400 bg-red-100 text-red-900',
+  blue: 'border-blue-400 bg-blue-100 text-blue-900',
+  yellow: 'border-yellow-400 bg-yellow-100 text-yellow-950',
+  green: 'border-emerald-400 bg-emerald-100 text-emerald-950',
+};
+
+type BoardViewProps = {
+  board: Board;
+  robots: RobotState;
+  initialRobots?: RobotState;
+  targetRobot: TargetRobotColor;
+  targetCell: CellIndex;
+  targetId?: number;
+  targetTokens?: Array<{ id: number; cell: CellIndex; robot: TargetRobotColor }>;
+  heatmap?: number[];
+  sampledCells?: CellIndex[];
+  maxHeat?: number;
+  currentMovePath?: MovePath | null;
+  activeMoveRobot?: RobotColor | null;
+  editable?: boolean;
+  isCellEditable?: (cell: CellIndex) => boolean;
+  onCellClick?: (cell: CellIndex) => void;
+};
+
+function getRobotAt(robots: RobotState, index: CellIndex): RobotColor | null {
+  for (const robot of ROBOT_ORDER) {
+    if (robots[robot] === index) {
+      return robot;
+    }
+  }
+
+  return null;
+}
+
+export function BoardView({
+  board,
+  robots,
+  initialRobots,
+  targetRobot,
+  targetCell,
+  targetId,
+  targetTokens,
+  heatmap,
+  sampledCells,
+  maxHeat,
+  currentMovePath,
+  activeMoveRobot,
+  editable = false,
+  isCellEditable,
+  onCellClick,
+}: BoardViewProps) {
+  const cells = Array.from({ length: board.width * board.height }, (_, index) => index);
+  const recentCells = new Set(sampledCells ?? []);
+  const pathCells = new Set(currentMovePath?.cells ?? []);
+  const normalizedMaxHeat = maxHeat ?? heatmap?.reduce((max, value) => Math.max(max, value), 0) ?? 0;
+  const tokensByCell = new Map<CellIndex, Array<{ id: number; robot: TargetRobotColor }>>();
+  const currentTargetToken =
+    targetId === undefined
+      ? undefined
+      : (targetTokens ?? []).find((token) => token.id === targetId);
+  const centerBlockOverlayStyle = {
+    left: `${(7 / board.width) * 100}%`,
+    top: `${(7 / board.height) * 100}%`,
+    width: `${(2 / board.width) * 100}%`,
+    height: `${(2 / board.height) * 100}%`,
+  };
+
+  for (const token of targetTokens ?? []) {
+    tokensByCell.set(token.cell, [...(tokensByCell.get(token.cell) ?? []), token]);
+  }
+
+  return (
+    <div className="flex w-full justify-center overflow-hidden pb-2">
+      <div className="relative aspect-square w-[min(92vw,calc(100vh-190px),680px)] max-w-full">
+        <div
+          className="grid h-full w-full overflow-hidden rounded border-2 border-slate-800 bg-white shadow-sm"
+          style={{
+            gridTemplateColumns: `repeat(${board.width}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${board.height}, minmax(0, 1fr))`,
+          }}
+        >
+          {cells.map((index) => {
+            const cellIndex = index as CellIndex;
+            const isBlocked = isCenterBlockedCell(board, cellIndex);
+            const robot = isBlocked ? null : getRobotAt(robots, cellIndex);
+            const initialRobot = initialRobots && !isBlocked ? getRobotAt(initialRobots, cellIndex) : null;
+            const isTarget = !isBlocked && cellIndex === targetCell;
+            const cellTargetTokens = tokensByCell.get(cellIndex) ?? [];
+            const pathRole =
+              currentMovePath && cellIndex === currentMovePath.from
+                ? 'from'
+                : currentMovePath && cellIndex === currentMovePath.to
+                  ? 'to'
+                  : pathCells.has(cellIndex)
+                    ? 'path'
+                    : null;
+            const canEditCell = editable && !isBlocked && (isCellEditable?.(cellIndex) ?? true);
+
+            return (
+              <BoardCell
+                key={cellIndex}
+                walls={getCellWalls(board, cellIndex)}
+                heat={heatmap?.[cellIndex] ?? 0}
+                maxHeat={normalizedMaxHeat}
+                isSampled={recentCells.has(cellIndex)}
+                isBlocked={isBlocked}
+                isEditing={editable}
+                editable={canEditCell}
+                pathRole={pathRole}
+                onClick={canEditCell && onCellClick ? () => onCellClick(cellIndex) : undefined}
+              >
+                {initialRobot ? (
+                  <div
+                    className={`absolute inset-[9%] z-0 rounded-sm ${INITIAL_MARKER_STYLES[initialRobot]}`}
+                    aria-label={`${initialRobot} initial position`}
+                  />
+                ) : null}
+                {cellTargetTokens.map((token) => (
+                  <TargetMarker
+                    key={token.id}
+                    robot={token.robot}
+                    targetId={token.id}
+                    isActive={
+                      targetId !== undefined
+                        ? token.id === targetId
+                        : isTarget && token.robot === targetRobot
+                    }
+                  />
+                ))}
+                {isTarget && cellTargetTokens.length === 0 ? (
+                  <TargetMarker robot={targetRobot} />
+                ) : null}
+                {robot ? <RobotToken robot={robot} isActive={robot === activeMoveRobot} /> : null}
+              </BoardCell>
+            );
+          })}
+        </div>
+        {currentTargetToken ? (
+          <div
+            className="pointer-events-none absolute z-30 flex items-center justify-center p-[0.5%]"
+            style={centerBlockOverlayStyle}
+          >
+            <div
+              className={`flex h-full w-full flex-col items-center justify-center rounded border-2 text-center shadow-sm ${TARGET_BADGE_STYLES[currentTargetToken.robot]}`}
+            >
+              <span className="text-[8px] font-semibold uppercase leading-none tracking-normal">
+                Target
+              </span>
+              <span className="mt-0.5 text-sm font-black leading-none">#{currentTargetToken.id}</span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
