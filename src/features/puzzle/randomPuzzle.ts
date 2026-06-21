@@ -24,6 +24,7 @@ export type RandomPuzzleOptions = {
   modules?: BoardModule[];
   random?: RandomSource;
   allowRotation?: boolean;
+  targetIndex?: number;
   maxAttempts?: number;
   solveMaxVisited?: number;
   solveMaxDepth?: number;
@@ -34,11 +35,12 @@ export type RandomPuzzleOptions = {
 export type RandomPuzzleResult = {
   board: Board;
   puzzle: PuzzleState;
-  solution: SolveResult;
+  targetTokens?: PhotoTargetToken[];
+  solution?: SolveResult;
   attempts: number;
   meta: {
-    generatedBy: 'photo-quadrant' | 'photo-quadrant-fallback';
-    minMoves: number;
+    generatedBy: 'photo-quadrant' | 'photo-quadrant-fallback' | 'photo-quadrant-random';
+    minMoves?: number;
     attempts: number;
     boardSource?: 'photo-quadrant';
     source?: 'photo-board-v5';
@@ -46,6 +48,20 @@ export type RandomPuzzleResult = {
     rotations?: ComposedPhotoBoard['meta']['rotations'];
     targetId?: number;
     boardSize?: 16;
+  };
+};
+
+export type PhotoTargetToken = {
+  id: number;
+  robot: TargetRobotColor;
+  cell: CellIndex;
+};
+
+export type VerifiedRandomPuzzleResult = RandomPuzzleResult & {
+  solution: SolveResult;
+  meta: RandomPuzzleResult['meta'] & {
+    generatedBy: 'photo-quadrant' | 'photo-quadrant-fallback';
+    minMoves: number;
   };
 };
 
@@ -89,12 +105,14 @@ function getRandomIndex(length: number, random: RandomSource): number {
 export function pickDistinctCells(
   board: Board,
   count: number,
-  random?: RandomSource
+  random?: RandomSource,
+  excludedCells: CellIndex[] = []
 ): CellIndex[] {
   const cellCount = board.width * board.height;
   const blockedCells = new Set(getCenterBlockedCells(board));
+  const excluded = new Set(excludedCells);
   const pool = Array.from({ length: cellCount }, (_, index) => index).filter(
-    (cell) => !blockedCells.has(cell)
+    (cell) => !blockedCells.has(cell) && !excluded.has(cell)
   );
 
   if (count > pool.length) {
@@ -115,12 +133,14 @@ export function pickDistinctCells(
 
 export function pickRandomRobotState(
   board: Board,
-  random?: RandomSource
+  random?: RandomSource,
+  excludedCells: CellIndex[] = []
 ): PuzzleState['robots'] {
   const [red, blue, yellow, green, black] = pickDistinctCells(
     board,
     ROBOT_COLORS.length,
-    random
+    random,
+    excludedCells
   );
 
   return {
@@ -177,29 +197,27 @@ function isTargetRobotColor(value: string): value is TargetRobotColor {
   return TARGET_ROBOT_COLORS.includes(value as TargetRobotColor);
 }
 
-function getPhotoTargetCandidates(
+export function getPhotoTargetTokens(
   composed: ComposedPhotoBoard,
-  board: Board,
-  robots: PuzzleState['robots']
-): RobotColorPhotoTarget[] {
-  const occupiedCells = new Set<CellIndex>(Object.values(robots));
+  board: Board
+): PhotoTargetToken[] {
   const blockedCells = new Set(getCenterBlockedCells(board));
 
-  return composed.targets.filter((target): target is RobotColorPhotoTarget => {
-    if (!isTargetRobotColor(target.color)) {
-      return false;
-    }
-
-    const cell = toPhotoTargetCell(board, target);
-
-    return (
-      cell >= 0 &&
-      cell < board.walls.length &&
-      !occupiedCells.has(cell) &&
-      !blockedCells.has(cell) &&
-      isCornerTargetCell(board, cell)
-    );
-  });
+  return composed.targets
+    .filter((target): target is RobotColorPhotoTarget => isTargetRobotColor(target.color))
+    .map((target) => ({
+      id: target.id,
+      robot: target.color,
+      cell: toPhotoTargetCell(board, target),
+    }))
+    .filter(
+      (target) =>
+        target.cell >= 0 &&
+        target.cell < board.walls.length &&
+        !blockedCells.has(target.cell) &&
+        isCornerTargetCell(board, target.cell)
+    )
+    .sort((left, right) => left.id - right.id);
 }
 
 function toPhotoTargetCell(board: Board, target: QuadrantTarget): CellIndex {
@@ -209,13 +227,17 @@ function toPhotoTargetCell(board: Board, target: QuadrantTarget): CellIndex {
 function pickPhotoTarget(
   composed: ComposedPhotoBoard,
   board: Board,
-  robots: PuzzleState['robots'],
-  random: RandomSource
-): RobotColorPhotoTarget {
-  const candidates = getPhotoTargetCandidates(composed, board, robots);
+  random: RandomSource,
+  targetIndex?: number
+): PhotoTargetToken {
+  const candidates = getPhotoTargetTokens(composed, board);
 
   if (candidates.length === 0) {
     throw new Error('No photo quadrant target cells are available.');
+  }
+
+  if (targetIndex !== undefined) {
+    return candidates[((targetIndex % candidates.length) + candidates.length) % candidates.length];
   }
 
   return candidates[getRandomIndex(candidates.length, random)];
@@ -227,7 +249,8 @@ export function generatePuzzleFromPhotoBoard(
   board: Board;
   puzzle: PuzzleState;
   composed: ComposedPhotoBoard;
-  selectedTarget: RobotColorPhotoTarget;
+  selectedTarget: PhotoTargetToken;
+  targetTokens: PhotoTargetToken[];
   meta: {
     source: 'photo-board-v5';
     order: ComposedPhotoBoard['meta']['order'];
@@ -239,12 +262,14 @@ export function generatePuzzleFromPhotoBoard(
   const source = getRandomSource(options.random);
   const composed = getRandomPhotoBoard(source);
   const board = composedPhotoBoardToBoard(composed);
-  const robots = pickRandomRobotState(board, source);
-  const selectedTarget = pickPhotoTarget(composed, board, robots, source);
+  const targetTokens = getPhotoTargetTokens(composed, board);
+  const selectedTarget = pickPhotoTarget(composed, board, source, options.targetIndex);
+  const robots = pickRandomRobotState(board, source, [selectedTarget.cell]);
   const puzzle: PuzzleState = {
     robots,
-    targetRobot: selectedTarget.color,
-    targetCell: toPhotoTargetCell(board, selectedTarget),
+    targetRobot: selectedTarget.robot,
+    targetCell: selectedTarget.cell,
+    targetId: selectedTarget.id,
   };
 
   return {
@@ -252,12 +277,36 @@ export function generatePuzzleFromPhotoBoard(
     puzzle,
     composed,
     selectedTarget,
+    targetTokens,
     meta: {
       source: composed.meta.source,
       order: composed.meta.order,
       rotations: composed.meta.rotations,
       targetId: selectedTarget.id,
       boardSize: composed.size,
+    },
+  };
+}
+
+export function createRandomPuzzleCandidate(
+  options: RandomPuzzleOptions = { modules: [] }
+): RandomPuzzleResult {
+  const { board, puzzle, targetTokens, meta } = generatePuzzleFromPhotoBoard(options);
+
+  return {
+    board,
+    puzzle,
+    targetTokens,
+    attempts: 1,
+    meta: {
+      generatedBy: 'photo-quadrant-random',
+      attempts: 1,
+      boardSource: 'photo-quadrant',
+      source: meta.source,
+      order: meta.order,
+      rotations: meta.rotations,
+      targetId: meta.targetId,
+      boardSize: meta.boardSize,
     },
   };
 }
@@ -281,13 +330,15 @@ function getFallbackSolvablePuzzle(
   solveMaxVisited: number,
   solveMaxDepth: number,
   solveMaxQueueSize: number,
-  attempts: number
-): RandomPuzzleResult {
+  attempts: number,
+  minDepth: number,
+  maxDepth: number
+): VerifiedRandomPuzzleResult {
   const fallback = photoQuadrantFallbackCandidate;
   const fallbackSolveOptions = {
-    maxVisited: Math.max(100_000, solveMaxVisited),
-    maxDepth: Math.max(50, solveMaxDepth),
-    maxQueueSize: Math.max(100_000, solveMaxQueueSize),
+    maxVisited: solveMaxVisited,
+    maxDepth: Math.max(maxDepth, solveMaxDepth),
+    maxQueueSize: solveMaxQueueSize,
   };
   const solution = solvePuzzle(fallback.board, fallback.puzzle, {
     maxVisited: fallbackSolveOptions.maxVisited,
@@ -295,10 +346,11 @@ function getFallbackSolvablePuzzle(
     maxQueueSize: fallbackSolveOptions.maxQueueSize,
   });
 
-  if (solution.found) {
+  if (solution.found && solution.depth >= minDepth && solution.depth <= maxDepth) {
     return {
       board: fallback.board,
       puzzle: fallback.puzzle,
+      targetTokens: fallback.targetTokens,
       solution,
       attempts,
       meta: {
@@ -322,10 +374,11 @@ function getFallbackSolvablePuzzle(
       maxQueueSize: fallbackSolveOptions.maxQueueSize,
     });
 
-    if (fallbackSolution.found) {
+    if (fallbackSolution.found && fallbackSolution.depth >= minDepth && fallbackSolution.depth <= maxDepth) {
       return {
         board: fallbackPuzzle.board,
         puzzle: fallbackPuzzle.puzzle,
+        targetTokens: fallback.targetTokens,
         solution: fallbackSolution,
         attempts,
         meta: {
@@ -343,10 +396,12 @@ function getFallbackSolvablePuzzle(
     }
   }
 
-  throw new Error('Photo quadrant fallback puzzle failed solver verification.');
+  throw new Error(
+    `No verified puzzle found in the requested ${minDepth}-${maxDepth} move range. Try again or choose an easier difficulty.`
+  );
 }
 
-export function createRandomPuzzle(options: RandomPuzzleOptions): RandomPuzzleResult {
+export function createRandomPuzzle(options: RandomPuzzleOptions): VerifiedRandomPuzzleResult {
   const source = getRandomSource(options.random);
   const maxAttempts = options.maxAttempts ?? 50;
   const solveMaxVisited = options.solveMaxVisited ?? 100_000;
@@ -357,7 +412,7 @@ export function createRandomPuzzle(options: RandomPuzzleOptions): RandomPuzzleRe
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const { board, puzzle, meta } = generatePuzzleFromPhotoBoard({
+      const { board, puzzle, targetTokens, meta } = generatePuzzleFromPhotoBoard({
         ...options,
         random: source,
       });
@@ -371,6 +426,7 @@ export function createRandomPuzzle(options: RandomPuzzleOptions): RandomPuzzleRe
         return {
           board,
           puzzle,
+          targetTokens,
           solution,
           attempts: attempt,
           meta: {
@@ -395,10 +451,12 @@ export function createRandomPuzzle(options: RandomPuzzleOptions): RandomPuzzleRe
     solveMaxVisited,
     solveMaxDepth,
     solveMaxQueueSize,
-    maxAttempts
+    maxAttempts,
+    minDepth,
+    maxDepth
   );
 }
 
-export function generateSolvablePuzzle(options: RandomPuzzleOptions): RandomPuzzleResult {
+export function generateSolvablePuzzle(options: RandomPuzzleOptions): VerifiedRandomPuzzleResult {
   return createRandomPuzzle(options);
 }

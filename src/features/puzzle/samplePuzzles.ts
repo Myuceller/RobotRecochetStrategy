@@ -1,4 +1,4 @@
-import { generateSolvablePuzzle } from './randomPuzzle';
+import { generateSolvablePuzzle, type PhotoTargetToken } from './randomPuzzle';
 import type { Board, PuzzleState } from './types';
 
 export type SamplePuzzleId = string;
@@ -9,6 +9,7 @@ export type SamplePuzzleDefinition = {
   description: string;
   board: Board;
   puzzle: PuzzleState;
+  targetTokens?: PhotoTargetToken[];
   expectedDepth?: number;
   source: 'photo-quadrant-sample';
 };
@@ -55,6 +56,7 @@ export const samplePuzzles: SamplePuzzleDefinition[] = [
     description: 'A solver-validated sample built from the 8x8 quadrant composition system.',
     board: photoQuadrantSample.board,
     puzzle: photoQuadrantSample.puzzle,
+    targetTokens: photoQuadrantSample.targetTokens,
     expectedDepth: photoQuadrantSample.solution.depth,
     source: 'photo-quadrant-sample',
   },

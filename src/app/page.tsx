@@ -18,14 +18,10 @@ import { applyMove } from '../features/puzzle/movement';
 import { getMovePath } from '../features/puzzle/playback';
 import {
   getPuzzleDifficultyPreset,
-  PUZZLE_DIFFICULTY_PRESETS,
   type PuzzleDifficultyId,
 } from '../features/puzzle/puzzleDifficulty';
-import {
-  getSamplePuzzleById,
-  samplePuzzles,
-  type SamplePuzzleId,
-} from '../features/puzzle/samplePuzzles';
+import type { PhotoTargetToken } from '../features/puzzle/randomPuzzle';
+import { samplePuzzles } from '../features/puzzle/samplePuzzles';
 import { exportPuzzleToJson, parsePuzzleFromJson } from '../features/puzzle/share';
 import { parseWallSpecImportFromJson } from '../features/puzzle/wallSpec';
 import type {
@@ -86,6 +82,18 @@ type SolveRunMode = 'fast' | 'watch';
 const MAX_SEARCH_FRAME_QUEUE = 50_000;
 const MAX_SEARCH_REPLAY_FRAMES = 50_000;
 const PROGRESS_STATS_INTERVAL_MS = 80;
+const UNBOUNDED_SEARCH_LIMIT = Number.MAX_SAFE_INTEGER;
+
+function shuffleTargetTokens(tokens: PhotoTargetToken[]): PhotoTargetToken[] {
+  const shuffled = [...tokens];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
 
 function getSearchFramesPerTick(speed: SearchPlaybackSpeed): number {
   if (speed === 16) {
@@ -107,12 +115,17 @@ export default function Page() {
   const initialSample = samplePuzzles[0];
   const [activeBoard, setActiveBoard] = useState<Board>(initialSample.board);
   const [activePuzzle, setActivePuzzle] = useState<PuzzleState>(initialSample.puzzle);
-  const [puzzleSource, setPuzzleSource] = useState<'sample' | 'random' | 'custom'>('sample');
-  const [selectedSamplePuzzleId, setSelectedSamplePuzzleId] = useState<SamplePuzzleId>(
-    initialSample.id
+  const [activeTargetTokens, setActiveTargetTokens] = useState<PhotoTargetToken[]>(
+    initialSample.targetTokens ?? []
   );
-  const [selectedDifficulty, setSelectedDifficulty] = useState<PuzzleDifficultyId>('normal');
-  const [generationInfo, setGenerationInfo] = useState<{
+  const [targetDeck, setTargetDeck] = useState<PhotoTargetToken[]>(() =>
+    shuffleTargetTokens(
+      (initialSample.targetTokens ?? []).filter((token) => token.id !== initialSample.puzzle.targetId)
+    )
+  );
+  const [puzzleSource, setPuzzleSource] = useState<'sample' | 'random' | 'custom'>('sample');
+  const [selectedDifficulty] = useState<PuzzleDifficultyId>('normal');
+  const [, setGenerationInfo] = useState<{
     attempts?: number;
     solutionDepth?: number;
     difficultyLabel?: string;
@@ -121,7 +134,7 @@ export default function Page() {
     targetId?: number;
     hasVerifiedSolution?: boolean;
   } | null>(null);
-  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [, setGenerationError] = useState<string | null>(null);
   const [isGeneratingPuzzle, setIsGeneratingPuzzle] = useState(false);
   const [result, setResult] = useState<SolveResult | null>(null);
   const [precheckedResult, setPrecheckedResult] = useState<SolveResult | null>(null);
@@ -601,28 +614,6 @@ export default function Page() {
     lastSearchFrameAtRef.current = 0;
   };
 
-  const activateSamplePuzzle = (sampleId: SamplePuzzleId) => {
-    const sample = getSamplePuzzleById(sampleId);
-
-    if (!sample) {
-      return;
-    }
-
-    setIsPlayingSolution(false);
-    stopActiveWorker();
-    stopActiveGenerationWorker();
-    setSelectedSamplePuzzleId(sample.id);
-    setActiveBoard(sample.board);
-    setActivePuzzle(sample.puzzle);
-    setPuzzleSource('sample');
-    setPrecheckedResult(null);
-    setGenerationInfo(null);
-    setGenerationError(null);
-    setImportError(null);
-    setImportSuccess(null);
-    resetTransientState();
-  };
-
   const applyPuzzleEdit = (nextPuzzle: PuzzleState) => {
     if (nextPuzzle === activePuzzle) {
       return;
@@ -687,6 +678,7 @@ export default function Page() {
       stopActiveGenerationWorker();
       setActiveBoard(imported.board);
       setActivePuzzle(imported.puzzle);
+      setActiveTargetTokens([]);
       setPuzzleSource('custom');
       setPrecheckedResult(null);
       setGenerationInfo(null);
@@ -737,6 +729,7 @@ export default function Page() {
     }
 
     const shouldCollectSearchFrames = mode === 'watch';
+    const preset = getPuzzleDifficultyPreset(selectedDifficulty);
     solveInFlightRef.current = true;
     setSolveRunMode(mode);
     setIsPlayingSolution(false);
@@ -895,9 +888,9 @@ export default function Page() {
       board: activeBoard,
       puzzle: activePuzzle,
       options: {
-        maxVisited: 1_000_000,
-        maxDepth: 50,
-        maxQueueSize: 1_000_000,
+        maxVisited: UNBOUNDED_SEARCH_LIMIT,
+        maxDepth: preset.solveMaxDepth,
+        maxQueueSize: UNBOUNDED_SEARCH_LIMIT,
         chunkSize: shouldCollectSearchFrames ? 250 : 5_000,
         progressInterval: shouldCollectSearchFrames ? 25 : 10_000,
       },
@@ -933,6 +926,7 @@ export default function Page() {
 
     const preset = getPuzzleDifficultyPreset(selectedDifficulty);
     const requestId = createRequestId();
+    const targetIndex = Math.floor(Math.random() * Math.max(activeTargetTokens.length, 16));
     const worker = new Worker(
       new URL('../features/puzzle/puzzleGeneratorWorker.ts', import.meta.url),
       {
@@ -953,17 +947,25 @@ export default function Page() {
       if (message.type === 'result') {
         setActiveBoard(message.result.board);
         setActivePuzzle(message.result.puzzle);
+        setActiveTargetTokens(message.result.targetTokens ?? []);
+        setTargetDeck(
+          shuffleTargetTokens(
+            (message.result.targetTokens ?? []).filter(
+              (token) => token.id !== message.result.puzzle.targetId
+            )
+          )
+        );
         setPuzzleSource('random');
-        setPrecheckedResult(message.result.solution);
+        setPrecheckedResult(message.result.solution ?? null);
         setStepIndex(0);
         setGenerationInfo({
           attempts: message.result.attempts,
-          solutionDepth: message.result.solution.depth,
+          solutionDepth: message.result.solution?.depth,
           difficultyLabel: preset.label,
           generatedBy: message.result.meta.generatedBy,
           source: message.result.meta.source,
           targetId: message.result.meta.targetId,
-          hasVerifiedSolution: message.result.solution.found,
+          hasVerifiedSolution: message.result.solution?.found ?? false,
         });
         setImportError(null);
         setImportSuccess(null);
@@ -1000,35 +1002,55 @@ export default function Page() {
         maxAttempts: preset.maxAttempts,
         solveMaxVisited: preset.solveMaxVisited,
         solveMaxDepth: preset.solveMaxDepth,
+        solveMaxQueueSize: preset.solveMaxQueueSize,
         difficulty: {
           minDepth: preset.minDepth,
           maxDepth: preset.maxDepth,
         },
         allowRotation: true,
+        targetIndex,
       },
     } satisfies PuzzleGeneratorWorkerRequest);
   };
 
-  const handleCancelGeneration = () => {
-    setIsPlayingSolution(false);
-    const activeId = activeGenerationRequestIdRef.current;
-
-    if (!activeId) {
+  const handleNextTarget = () => {
+    if (!result?.found || activeTargetTokens.length === 0 || isSolving || isGeneratingPuzzle) {
       return;
     }
 
-    generationWorkerRef.current?.postMessage({
-      type: 'cancel',
-      id: activeId,
-    } satisfies PuzzleGeneratorWorkerRequest);
-    generationWorkerRef.current?.terminate();
-    generationWorkerRef.current = null;
-    activeGenerationRequestIdRef.current = null;
-    setIsGeneratingPuzzle(false);
-  };
+    const nextDeck =
+      targetDeck.length > 0
+        ? targetDeck
+        : shuffleTargetTokens(
+            activeTargetTokens.filter((token) => token.id !== activePuzzle.targetId)
+          );
+    const [nextTarget, ...remainingTargets] = nextDeck;
 
-  const handleResetSamplePuzzle = () => {
-    activateSamplePuzzle(selectedSamplePuzzleId);
+    if (!nextTarget) {
+      return;
+    }
+
+    const finalRobots = result.moves.reduce<RobotState>(
+      (robots, move) => applyMove(robots, move),
+      activePuzzle.robots
+    );
+
+    stopActiveWorker();
+    stopActiveGenerationWorker();
+    setActivePuzzle({
+      robots: finalRobots,
+      targetRobot: nextTarget.robot,
+      targetCell: nextTarget.cell,
+      targetId: nextTarget.id,
+    });
+    setTargetDeck(remainingTargets);
+    setPuzzleSource('random');
+    setPrecheckedResult(null);
+    setGenerationInfo(null);
+    setGenerationError(null);
+    setImportError(null);
+    setImportSuccess(null);
+    resetTransientState();
   };
 
   const handleManualStepIndexChange: typeof setStepIndex = (action) => {
@@ -1046,12 +1068,10 @@ export default function Page() {
               Watch the solver search, then replay the exact shortest path it found.
             </p>
           </div>
-          <div className="rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
-            Current puzzle: <span className="font-semibold text-slate-900">{puzzleSource}</span>
-            {generationInfo?.solutionDepth ? (
-              <span className="ml-2">verified depth {generationInfo.solutionDepth}</span>
-            ) : null}
-          </div>
+          <PuzzleControls
+            isGeneratingPuzzle={isGeneratingPuzzle}
+            onGenerateRandom={handleGenerateRandomPuzzle}
+          />
         </div>
 
         <div className="mb-3 grid gap-2 text-sm md:grid-cols-3">
@@ -1092,6 +1112,8 @@ export default function Page() {
               initialRobots={activePuzzle.robots}
               targetRobot={activePuzzle.targetRobot}
               targetCell={activePuzzle.targetCell}
+              targetId={activePuzzle.targetId}
+              targetTokens={activeTargetTokens}
               heatmap={isShowingProofFrames ? undefined : progress?.heatmap}
               sampledCells={isShowingProofFrames ? undefined : progress?.sampledCells}
               maxHeat={isShowingProofFrames ? undefined : progress?.maxHeat}
@@ -1153,9 +1175,12 @@ export default function Page() {
             onFindAnswer={() => handleSolve('fast')}
             onWatchBfs={() => handleSolve('watch')}
             onCancel={handleCancel}
+            onNextTarget={handleNextTarget}
             isSolving={isSolving}
             solveRunMode={solveRunMode}
             isSolveDisabled={isGeneratingPuzzle}
+            canAdvanceTarget={Boolean(result?.found && activeTargetTokens.length > 0)}
+            targetId={activePuzzle.targetId}
             isPlaying={isPlayingSolution}
             playbackSpeed={playbackSpeed}
             onPlay={() => setIsPlayingSolution(true)}
@@ -1171,32 +1196,6 @@ export default function Page() {
         ) : null}
 
         <section className="mt-3 grid gap-3 lg:grid-cols-2">
-          <details className="rounded border border-slate-300 bg-white text-sm shadow-sm">
-            <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-slate-800">
-              Puzzle Setup
-              <span className="ml-2 text-xs font-normal text-slate-500">
-                sample/random/difficulty
-              </span>
-            </summary>
-            <div className="border-t border-slate-200">
-              <PuzzleControls
-                puzzleSource={puzzleSource}
-                samplePuzzles={samplePuzzles}
-                selectedSamplePuzzleId={selectedSamplePuzzleId}
-                difficultyPresets={PUZZLE_DIFFICULTY_PRESETS}
-                selectedDifficulty={selectedDifficulty}
-                generationInfo={generationInfo}
-                generationError={generationError}
-                isGeneratingPuzzle={isGeneratingPuzzle}
-                isSolving={isSolving}
-                onSelectSamplePuzzle={activateSamplePuzzle}
-                onSelectDifficulty={setSelectedDifficulty}
-                onGenerateRandom={handleGenerateRandomPuzzle}
-                onCancelGeneration={handleCancelGeneration}
-                onResetSample={handleResetSamplePuzzle}
-              />
-            </div>
-          </details>
           <PuzzleEditorPanel
             editorMode={editorMode}
             selectedEditorRobot={selectedEditorRobot}

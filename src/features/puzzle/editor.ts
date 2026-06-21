@@ -70,6 +70,7 @@ export function setTargetCellInPuzzle(
   return {
     ...puzzle,
     targetCell: cell,
+    targetId: undefined,
   };
 }
 
@@ -80,6 +81,7 @@ export function setTargetRobotInPuzzle(
   return {
     ...puzzle,
     targetRobot: robot,
+    targetId: undefined,
   };
 }
 

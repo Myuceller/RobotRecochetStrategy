@@ -2,6 +2,8 @@ import type { TargetRobotColor } from '../features/puzzle/types';
 
 type TargetMarkerProps = {
   robot: TargetRobotColor;
+  targetId?: number;
+  isActive?: boolean;
 };
 
 const TARGET_STYLES: Record<TargetRobotColor, string> = {
@@ -11,11 +13,15 @@ const TARGET_STYLES: Record<TargetRobotColor, string> = {
   green: 'border-emerald-500 bg-emerald-100',
 };
 
-export function TargetMarker({ robot }: TargetMarkerProps) {
+export function TargetMarker({ robot, targetId, isActive = true }: TargetMarkerProps) {
   return (
     <div
-      className={`absolute inset-[15%] z-0 rounded-full border-2 border-dashed ${TARGET_STYLES[robot]}`}
-      aria-label={`${robot} target`}
-    />
+      className={`absolute flex items-center justify-center rounded-full border-2 border-dashed text-[9px] font-bold leading-none ${
+        isActive ? 'inset-[13%] z-[2] shadow-sm' : 'inset-[23%] z-[1] opacity-60'
+      } ${TARGET_STYLES[robot]}`}
+      aria-label={targetId === undefined ? `${robot} target` : `${robot} target ${targetId}`}
+    >
+      {targetId}
+    </div>
   );
 }

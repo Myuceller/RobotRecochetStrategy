@@ -1,4 +1,4 @@
-import { generateSolvablePuzzle } from './randomPuzzle';
+import { createRandomPuzzleCandidate } from './randomPuzzle';
 import { sampleModules } from './sampleModules';
 import type {
   PuzzleGeneratorWorkerRequest,
@@ -44,7 +44,7 @@ function runGeneration(message: Extract<PuzzleGeneratorWorkerRequest, { type: 'g
   }
 
   try {
-    const result = generateSolvablePuzzle({
+    const result = createRandomPuzzleCandidate({
       modules: sampleModules,
       ...message.options,
     });

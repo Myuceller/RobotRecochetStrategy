@@ -30,6 +30,7 @@ export type PuzzleState = {
   robots: RobotState;
   targetRobot: TargetRobotColor;
   targetCell: CellIndex;
+  targetId?: number;
 };
 
 export type Move = {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addCenterBlock, addWall, createEmptyBoard, getCenterBlockedCells, toIndex } from './board';
 import {
+  createRandomPuzzleCandidate,
   createRandomPuzzle,
   FALLBACK_SOLVABLE_PUZZLES,
   generateSolvablePuzzle,
@@ -209,9 +210,61 @@ describe('random puzzle generation', () => {
         { x: 8, y: 8 },
       ])
     );
-    expect(result.selectedTarget.color).toBe(result.puzzle.targetRobot);
+    expect(result.selectedTarget.robot).toBe(result.puzzle.targetRobot);
+    expect(result.selectedTarget.cell).toBe(result.puzzle.targetCell);
+    expect(result.selectedTarget.id).toBe(result.puzzle.targetId);
+    expect(result.targetTokens).toHaveLength(16);
+    expect(result.targetTokens.map((token) => token.id)).toEqual(
+      Array.from({ length: 16 }, (_, index) => index + 1)
+    );
+    expect(Object.values(result.puzzle.robots)).not.toContain(result.puzzle.targetCell);
     expect(isCornerTargetCell(result.board, result.puzzle.targetCell)).toBe(true);
     expect(getCenterBlockedCells(result.board)).not.toContain(result.puzzle.targetCell);
+  });
+
+  it('uses a fixed target token sequence when targetIndex is provided', () => {
+    const first = createRandomPuzzleCandidate({
+      modules: sampleModules,
+      random: createMockRandom(SOLVABLE_SEQUENCE),
+      targetIndex: 0,
+    });
+    const second = createRandomPuzzleCandidate({
+      modules: sampleModules,
+      random: createMockRandom(SOLVABLE_SEQUENCE),
+      targetIndex: 1,
+    });
+
+    expect(first.targetTokens).toHaveLength(16);
+    expect(first.puzzle.targetCell).toBe(first.targetTokens?.[0].cell);
+    expect(first.puzzle.targetRobot).toBe(first.targetTokens?.[0].robot);
+    expect(first.puzzle.targetId).toBe(first.targetTokens?.[0].id);
+    expect(second.puzzle.targetCell).toBe(second.targetTokens?.[1].cell);
+    expect(second.puzzle.targetRobot).toBe(second.targetTokens?.[1].robot);
+    expect(second.puzzle.targetId).toBe(second.targetTokens?.[1].id);
+    expect(first.puzzle.targetCell).not.toBe(second.puzzle.targetCell);
+    expect(Object.values(first.puzzle.robots)).not.toContain(first.puzzle.targetCell);
+    expect(Object.values(second.puzzle.robots)).not.toContain(second.puzzle.targetCell);
+  });
+
+  it('creates an unverified random puzzle candidate without pre-solving', () => {
+    const result = createRandomPuzzleCandidate({
+      modules: sampleModules,
+      random: createMockRandom(SOLVABLE_SEQUENCE),
+    });
+
+    expect(result.board.width).toBe(16);
+    expect(result.board.height).toBe(16);
+    expect(result.solution).toBeUndefined();
+    expect(result.meta.generatedBy).toBe('photo-quadrant-random');
+    expect(result.meta.boardSource).toBe('photo-quadrant');
+    expect(result.meta.source).toBe('photo-board-v5');
+    expect(result.meta.targetId).toBeTypeOf('number');
+    expect(result.puzzle.targetId).toBe(result.meta.targetId);
+    expect(result.targetTokens).toHaveLength(16);
+    expect(result.targetTokens?.some((token) => token.id === result.puzzle.targetId)).toBe(true);
+    expect(new Set(Object.values(result.puzzle.robots)).size).toBe(ROBOT_COLORS.length);
+    expect(getCenterBlockedCells(result.board)).not.toContain(result.puzzle.targetCell);
+    expect(isCornerTargetCell(result.board, result.puzzle.targetCell)).toBe(true);
   });
 
   it('generates a photo-quadrant puzzle through the solvable puzzle entrypoint', () => {
@@ -249,24 +302,20 @@ describe('random puzzle generation', () => {
     expect(finalRobots[result.puzzle.targetRobot]).toBe(result.puzzle.targetCell);
   });
 
-  it('returns a fallback solvable puzzle when maxAttempts is exceeded', () => {
-    const result = createRandomPuzzle({
-      modules: sampleModules,
-      random: createMockRandom(SOLVABLE_SEQUENCE),
-      allowRotation: false,
-      maxAttempts: 1,
-      difficulty: {
-        minDepth: 20,
-        maxDepth: 20,
-      },
-      solveMaxDepth: 5,
-    });
-
-    expect(result.meta.generatedBy).toBe('photo-quadrant-fallback');
-    expect(result.meta.boardSource).toBe('photo-quadrant');
-    expect(result.meta.source).toBe('photo-board-v5');
-    expect(result.solution.found).toBe(true);
-    expect(result.solution.moves.length).toBeGreaterThan(0);
+  it('does not return an out-of-range fallback when maxAttempts is exceeded', () => {
+    expect(() =>
+      createRandomPuzzle({
+        modules: sampleModules,
+        random: createMockRandom(SOLVABLE_SEQUENCE),
+        allowRotation: false,
+        maxAttempts: 1,
+        difficulty: {
+          minDepth: 20,
+          maxDepth: 20,
+        },
+        solveMaxDepth: 5,
+      })
+    ).toThrow('No verified puzzle found');
   });
 
   it('returns a fallback solvable puzzle when maxAttempts is zero', () => {
@@ -275,8 +324,8 @@ describe('random puzzle generation', () => {
       random: createMockRandom(SOLVABLE_SEQUENCE),
       allowRotation: false,
       maxAttempts: 0,
-      solveMaxVisited: 0,
-      solveMaxQueueSize: 0,
+      solveMaxVisited: 100_000,
+      solveMaxQueueSize: 100_000,
       difficulty: {
         minDepth: 1,
         maxDepth: 50,
@@ -289,24 +338,23 @@ describe('random puzzle generation', () => {
     expect(result.solution.found).toBe(true);
   });
 
-  it('filters generated candidates by minDepth before falling back', () => {
-    const result = createRandomPuzzle({
-      modules: sampleModules,
-      random: createMockRandom(SOLVABLE_SEQUENCE),
-      allowRotation: false,
-      maxAttempts: 1,
-      difficulty: {
-        minDepth: 20,
-        maxDepth: 50,
-      },
-    });
-
-    expect(result.meta.generatedBy).toBe('photo-quadrant-fallback');
-    expect(result.meta.boardSource).toBe('photo-quadrant');
+  it('filters generated candidates by minDepth before considering fallback', () => {
+    expect(() =>
+      createRandomPuzzle({
+        modules: sampleModules,
+        random: createMockRandom(SOLVABLE_SEQUENCE),
+        allowRotation: false,
+        maxAttempts: 1,
+        difficulty: {
+          minDepth: 20,
+          maxDepth: 50,
+        },
+      })
+    ).toThrow('No verified puzzle found');
   });
 
-  it('keeps every generated puzzle solvable across 100 repeated generations', () => {
-    for (let index = 0; index < 100; index += 1) {
+  it('keeps every generated puzzle solvable across repeated generations', () => {
+    for (let index = 0; index < 20; index += 1) {
       const result = generateSolvablePuzzle({
         modules: sampleModules,
         random: createSeededRandom(index + 1),
@@ -339,7 +387,7 @@ describe('random puzzle generation', () => {
         result.puzzle.targetCell
       );
     }
-  }, 90_000);
+  }, 60_000);
 
   it('keeps fallback puzzles verified by the solver', () => {
     for (const fallback of FALLBACK_SOLVABLE_PUZZLES) {

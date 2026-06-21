@@ -11,9 +11,12 @@ type SolutionPanelProps = {
   onFindAnswer: () => void;
   onWatchBfs: () => void;
   onCancel: () => void;
+  onNextTarget: () => void;
   isSolving: boolean;
   solveRunMode?: 'fast' | 'watch' | null;
   isSolveDisabled?: boolean;
+  canAdvanceTarget?: boolean;
+  targetId?: number;
   isPlaying: boolean;
   playbackSpeed: PlaybackSpeed;
   onPlay: () => void;
@@ -64,9 +67,12 @@ export function SolutionPanel({
   onFindAnswer,
   onWatchBfs,
   onCancel,
+  onNextTarget,
   isSolving,
   solveRunMode = null,
   isSolveDisabled = false,
+  canAdvanceTarget = false,
+  targetId,
   isPlaying,
   playbackSpeed,
   onPlay,
@@ -84,6 +90,9 @@ export function SolutionPanel({
           <p className="text-sm text-slate-600">
             Answer step {stepIndex} / {moveCount}
           </p>
+          {targetId !== undefined ? (
+            <p className="mt-1 text-xs font-semibold text-slate-500">Target #{targetId}</p>
+          ) : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2">
           <button
@@ -112,6 +121,15 @@ export function SolutionPanel({
           </button>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={onNextTarget}
+        disabled={!canAdvanceTarget || isSolving || isSolveDisabled}
+        className="mt-3 w-full rounded border border-emerald-700 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        Next Target
+      </button>
 
       <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
         {isSolving ? (

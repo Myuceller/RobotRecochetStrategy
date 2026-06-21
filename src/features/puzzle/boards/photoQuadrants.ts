@@ -74,10 +74,9 @@ export const PHOTO_BOARD_TOP_LEFT: RawQuadrant = {
   cutCorner: 'bottomRight',
   targets: [
     { id: 1, x: 5, y: 1, color: 'blue', shape: 'circle', corner: 'sw' },
-    { id: 2, x: 7, y: 2, color: 'orange', shape: 'circle', corner: 'se' },
-    { id: 3, x: 3, y: 4, color: 'red', shape: 'cross', corner: 'se' },
-    { id: 4, x: 6, y: 5, color: 'green', shape: 'diamond', corner: 'nw' },
-    { id: 5, x: 1, y: 6, color: 'yellow', shape: 'triangle', corner: 'ne' },
+    { id: 2, x: 3, y: 4, color: 'red', shape: 'cross', corner: 'se' },
+    { id: 3, x: 6, y: 5, color: 'green', shape: 'diamond', corner: 'nw' },
+    { id: 4, x: 1, y: 6, color: 'yellow', shape: 'triangle', corner: 'ne' },
   ],
   borderStubs: [
     { side: 'top', index: 3 },
@@ -90,10 +89,10 @@ export const PHOTO_BOARD_TOP_RIGHT: RawQuadrant = {
   size: 8,
   cutCorner: 'bottomLeft',
   targets: [
-    { id: 6, x: 3, y: 1, color: 'red', shape: 'circle', corner: 'nw' },
-    { id: 7, x: 6, y: 3, color: 'green', shape: 'triangle', corner: 'ne' },
-    { id: 8, x: 1, y: 4, color: 'gray', shape: 'diamond', corner: 'se' },
-    { id: 9, x: 4, y: 6, color: 'yellow', shape: 'hex', corner: 'sw' },
+    { id: 5, x: 3, y: 1, color: 'red', shape: 'circle', corner: 'nw' },
+    { id: 6, x: 6, y: 3, color: 'green', shape: 'triangle', corner: 'ne' },
+    { id: 7, x: 1, y: 4, color: 'blue', shape: 'diamond', corner: 'se' },
+    { id: 8, x: 4, y: 6, color: 'yellow', shape: 'hex', corner: 'sw' },
   ],
   borderStubs: [
     { side: 'top', index: 1 },
@@ -106,10 +105,10 @@ export const PHOTO_BOARD_BOTTOM_LEFT: RawQuadrant = {
   size: 8,
   cutCorner: 'topRight',
   targets: [
-    { id: 10, x: 3, y: 2, color: 'black', shape: 'triangle', corner: 'se' },
-    { id: 11, x: 5, y: 3, color: 'green', shape: 'cross', corner: 'ne' },
-    { id: 12, x: 2, y: 4, color: 'yellow', shape: 'circle', corner: 'sw' },
-    { id: 13, x: 4, y: 5, color: 'red', shape: 'diamond', corner: 'nw' },
+    { id: 9, x: 3, y: 2, color: 'blue', shape: 'triangle', corner: 'se' },
+    { id: 10, x: 5, y: 3, color: 'green', shape: 'cross', corner: 'ne' },
+    { id: 11, x: 2, y: 4, color: 'yellow', shape: 'circle', corner: 'sw' },
+    { id: 12, x: 4, y: 5, color: 'red', shape: 'diamond', corner: 'nw' },
   ],
   borderStubs: [
     { side: 'left', index: 2 },
@@ -122,10 +121,10 @@ export const PHOTO_BOARD_BOTTOM_RIGHT: RawQuadrant = {
   size: 8,
   cutCorner: 'topLeft',
   targets: [
-    { id: 14, x: 4, y: 1, color: 'blue', shape: 'cross', corner: 'nw' },
-    { id: 15, x: 2, y: 2, color: 'yellow', shape: 'diamond', corner: 'se' },
-    { id: 16, x: 6, y: 4, color: 'red', shape: 'triangle', corner: 'ne' },
-    { id: 17, x: 3, y: 6, color: 'green', shape: 'circle', corner: 'sw' },
+    { id: 13, x: 4, y: 1, color: 'blue', shape: 'cross', corner: 'nw' },
+    { id: 14, x: 2, y: 2, color: 'yellow', shape: 'diamond', corner: 'se' },
+    { id: 15, x: 6, y: 4, color: 'red', shape: 'triangle', corner: 'ne' },
+    { id: 16, x: 3, y: 6, color: 'green', shape: 'circle', corner: 'sw' },
   ],
   borderStubs: [
     { side: 'right', index: 2 },

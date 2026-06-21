@@ -69,6 +69,13 @@ function validateCellIndex(cell: unknown, board: Board, label: string): CellInde
   return cell;
 }
 
+function validateTargetId(value: unknown): number {
+  assert(typeof value === 'number' && Number.isInteger(value), 'puzzle.targetId must be an integer.');
+  assert(value >= 1 && value <= 16, 'puzzle.targetId must be between 1 and 16.');
+
+  return value;
+}
+
 function validatePuzzle(value: unknown, board: Board): PuzzleState {
   assert(isRecord(value), 'puzzle must be an object.');
   assert(isRecord(value.robots), 'puzzle.robots must be an object.');
@@ -89,6 +96,10 @@ function validatePuzzle(value: unknown, board: Board): PuzzleState {
   );
 
   const targetCell = validateCellIndex(value.targetCell, board, 'puzzle.targetCell');
+  const targetId =
+    value.targetId === undefined
+      ? undefined
+      : validateTargetId(value.targetId);
 
   assert(!robotCells.includes(targetCell), 'puzzle.targetCell must not overlap a robot position.');
   assert(hasCornerWalls(board, targetCell), 'puzzle.targetCell must be inside a corner wall target cell.');
@@ -105,6 +116,7 @@ function validatePuzzle(value: unknown, board: Board): PuzzleState {
     robots,
     targetRobot: value.targetRobot as TargetRobotColor,
     targetCell,
+    ...(targetId === undefined ? {} : { targetId }),
   };
 }
 

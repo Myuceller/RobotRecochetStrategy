@@ -8,8 +8,10 @@ export type PuzzleGeneratorWorkerRequest =
         maxAttempts?: number;
         solveMaxVisited?: number;
         solveMaxDepth?: number;
+        solveMaxQueueSize?: number;
         difficulty?: RandomPuzzleDifficulty;
         allowRotation?: boolean;
+        targetIndex?: number;
       };
     }
   | {

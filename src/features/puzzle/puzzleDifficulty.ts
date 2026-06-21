@@ -9,6 +9,7 @@ export type PuzzleDifficultyPreset = {
   maxAttempts: number;
   solveMaxVisited: number;
   solveMaxDepth: number;
+  solveMaxQueueSize: number;
 };
 
 export const PUZZLE_DIFFICULTY_PRESETS: PuzzleDifficultyPreset[] = [
@@ -21,6 +22,7 @@ export const PUZZLE_DIFFICULTY_PRESETS: PuzzleDifficultyPreset[] = [
     maxAttempts: 30,
     solveMaxVisited: 50_000,
     solveMaxDepth: 20,
+    solveMaxQueueSize: 80_000,
   },
   {
     id: 'normal',
@@ -31,16 +33,18 @@ export const PUZZLE_DIFFICULTY_PRESETS: PuzzleDifficultyPreset[] = [
     maxAttempts: 50,
     solveMaxVisited: 100_000,
     solveMaxDepth: 30,
+    solveMaxQueueSize: 150_000,
   },
   {
     id: 'hard',
     label: 'Hard',
-    description: '생성 실패 가능성이 있는 긴 퍼즐',
-    minDepth: 11,
+    description: '10수 이상이 필요한 긴 퍼즐',
+    minDepth: 10,
     maxDepth: 15,
-    maxAttempts: 80,
-    solveMaxVisited: 200_000,
+    maxAttempts: 180,
+    solveMaxVisited: 350_000,
     solveMaxDepth: 40,
+    solveMaxQueueSize: 350_000,
   },
 ];
 
